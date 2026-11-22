@@ -39,6 +39,14 @@ console.log(`Built Cloudflare Worker with ${Object.keys(assets).length} bundled 
 if (process.argv.includes('--pages')) {
   const config = JSON.parse(await readFile(path.join(root, 'wrangler.pages.jsonc'), 'utf8'));
   const output = path.join(root, config.pages_build_output_dir);
+  const deployRoot = path.join(root, '.wrangler/pages-deploy');
   await mkdir(output, { recursive: true });
   await copyFile(path.join(root, 'dist/server/index.js'), path.join(output, '_worker.js'));
+  await mkdir(deployRoot, { recursive: true });
+  const relative = file => path.relative(deployRoot, file).split(path.sep).join('/');
+  config.pages_build_output_dir = relative(output);
+  for (const database of config.d1_databases || []) {
+    if (database.migrations_dir) database.migrations_dir = relative(path.join(root, database.migrations_dir));
+  }
+  await writeFile(path.join(deployRoot, 'wrangler.jsonc'), JSON.stringify(config, null, 2) + '\n');
 }

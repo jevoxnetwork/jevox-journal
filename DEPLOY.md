@@ -20,7 +20,7 @@ npx wrangler@4.137.0 d1 migrations apply DB --remote --config wrangler.pages.jso
 Загрузите сборку в существующий проект Pages, затем проверьте страницу входа и изменённую функцию.
 
 ```sh
-npx wrangler@4.137.0 pages deploy --config wrangler.pages.jsonc --project-name jevoxjournal --branch main
+(cd .wrangler/pages-deploy && npx wrangler@4.137.0 pages deploy --project-name jevoxjournal --branch main)
 ```
 
 Команда `npm run deploy` использует отдельную конфигурацию Cloudflare Workers.
