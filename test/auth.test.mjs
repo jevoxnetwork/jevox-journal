@@ -403,67 +403,46 @@ test('Staff controls separate monthly activity, personal notifications, position
  }finally{await f.close()}
 });
 
-test('Web checks authorize the caller, claim actions once, relay chat and update one history record',async()=>{
+test('Game check events retain history; only managers and above can search staff checks',async()=>{
  const f=setup({position:'Саппорт'});
  try{
   f.env.CHECK_BRIDGE_TOKEN='b'.repeat(64);
-  f.DB.raw.exec("UPDATE moderators SET nickname='WebMod' WHERE id='actor'");
+  f.DB.raw.exec("UPDATE moderators SET nickname='FirstMod' WHERE id='actor'");
   const session=await login(f);
-  const browser={Cookie:session.sessionCookie,Origin:f.env.PUBLIC_URL,'Content-Type':'application/json'};
-  const read=async path=>(await f.request(path,{headers:browser})).json();
-  browser['X-CSRF-Token']=(await read('/api/auth/session')).csrf;
-  const call=(data)=>f.request('/api/work/checks',{method:'POST',headers:browser,body:JSON.stringify(data)});
-  const bridge=(data,token=f.env.CHECK_BRIDGE_TOKEN)=>f.request('/api/check-bridge',{method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(data)});
-  const open={kind:'start',player:'TestPlayer',reason:'Жалоба',seconds:180};
-  assert.equal((await call(open)).status,503);
+  const headers={Cookie:session.sessionCookie};
+  const bridge=(data,token=f.env.CHECK_BRIDGE_TOKEN)=>f.request('/api/check-bridge',{
+    method:'POST',headers:{Authorization:'Bearer '+token},body:JSON.stringify(data),
+  });
   assert.equal((await bridge({op:'poll'},'wrong')).status,403);
-  assert.equal((await bridge({op:'poll'})).status,200);
-  const started=await call(open);
-  assert.equal(started.status,201);
-  const {id}=await started.json();
-  assert.equal((await call(open)).status,409);
-  const {jobs}=await(await bridge({op:'poll'})).json();
-  assert.equal(jobs.length,1);
-  assert.equal(jobs[0].check.moderator,'WebMod');
-  assert.equal((await(await bridge({op:'poll'})).json()).jobs.length,0);
-  await bridge({op:'state',id,state:'active'});
-  assert.equal((await call({id,kind:'chat',message:'Ответьте в чат'})).status,202);
-  const messageId=crypto.randomUUID();
-  for(let i=0;i<2;i++)await bridge({op:'message',id,messageId,side:'player',message:'На связи'});
-  assert.equal((await read('/api/work/checks')).messages.length,1);
-  assert.equal((await call({id,kind:'ban',duration:'-s',reason:'Причина'})).status,400);
-  assert.equal((await call({id,kind:'ban',duration:'7d',reason:'Причина'})).status,202);
-  assert.equal((await call({id,kind:'release'})).status,409);
-  const startedAt=Date.now()-1000;
-  const row={id:'fastfreeze-'+id,player:'TestPlayer',moderator:'WebMod',reason:'Жалоба',started:startedAt,ended:0,result:'На проверке',type:'check'};
-  for(const record of [row,{...row,ended:Date.now(),result:'Забанен'}]){
-    assert.equal((await bridge({op:'sync',kind:'checks',records:[record]})).status,200);
-  }
+  assert.deepEqual(await(await bridge({op:'poll'})).json(),{jobs:[]});
+  assert.equal((await f.request('/api/work/checks',{method:'POST',headers,body:'{}'})).status,404);
+  assert.equal((await f.request('/api/server/staff-checks')).status,403);
+  assert.equal((await f.request('/api/server/staff-checks',{headers})).status,403);
+  const started=Date.now()-1000, ended=started+500;
+  const first={id:'fastfreeze-first',player:'TestPlayer',moderator:'FirstMod',reason:'Жалоба',started,ended:0,result:'На проверке',active:1,type:'check'};
+  const second={...first,id:'fastfreeze-second',moderator:'SecondMod',player:'OtherPlayer'};
+  const sync=records=>bridge({op:'sync',kind:'checks',records});
+  assert.equal((await sync([first,second])).status,200);
+  assert.equal((await sync([{...first,ended,result:'Отпущен',active:0,removed_by:'OtherModerator'}])).status,200);
+  assert.equal((await sync([first])).status,200);
+  const read=async path=>(await f.request(path,{headers})).json();
   const today=new Date(Date.now()+10800000).toISOString().slice(0,10);
-  const history=await read('/api/server/checks?player=Test&reason='+encodeURIComponent('Жалоба')+'&from='+today+'&to='+today);
-  assert.equal(history.total,1);
-  assert.equal(history.items[0].result,'Забанен');
-  assert.equal(history.items[0].chat_id,id);
-  const archivedPath='/api/work/checks/chat?id='+id;
-  assert.equal((await f.request(archivedPath)).status,403);
-  assert.deepEqual((await read(archivedPath)).messages.map(item=>item.body),['На связи']);
-  assert.equal((await f.request(archivedPath+'&before=0',{headers:browser})).status,400);
-  f.DB.raw.prepare("INSERT INTO web_checks (id,staff_id,moderator,player,reason,seconds,state,created) VALUES (?,'other','SecondMod','TestPlayer','Жалоба',180,'released',?)").run(crypto.randomUUID(),Date.now());
-  const other=f.DB.raw.prepare("SELECT id FROM web_checks WHERE staff_id='other'").get().id;
-  assert.equal((await f.request('/api/work/checks/chat?id='+other,{headers:browser})).status,404);
-  const writeMessage=f.DB.raw.prepare("INSERT INTO web_check_messages (id,check_id,side,body,created) VALUES (?,?,'player',?,?)");
-  for(let i=0;i<101;i++)writeMessage.run(crypto.randomUUID(),id,'message '+i,Date.now());
-  const transcript=await read(archivedPath);
-  assert.equal(transcript.messages.length,100);
-  assert.equal(transcript.messages[0].body,'message 1');
-  assert.deepEqual((await read(archivedPath+'&before='+transcript.older)).messages.map(item=>item.body),['На связи','message 0']);
-
+  const personal=await read('/api/server/checks?player=test&reason='+encodeURIComponent('Жалоба')+'&from='+today+'&to='+today);
+  assert.equal(personal.total,1);
+  assert.equal(personal.items[0].started,started);
+  assert.equal(personal.items[0].ended,ended);
+  assert.equal(personal.items[0].result,'Отпущен');
+  assert.equal(personal.items[0].removed_by,'OtherModerator');
   assert.equal((await read('/api/server/summary')).checks,1);
   assert.equal((await read('/api/server/leaderboard?period=month')).staff[0].checks,1);
-  f.DB.raw.exec("UPDATE moderators SET position='Шериф' WHERE id='actor'");
-  assert.equal((await f.request('/api/work/checks',{headers:browser})).status,403);
-  assert.equal((await f.request(archivedPath,{headers:browser})).status,200);
-  assert.equal((await read('/api/server/checks')).total,1);
+  f.DB.raw.exec("UPDATE moderators SET position='Спектатор' WHERE id='actor'");
+  assert.equal((await f.request('/api/server/staff-checks',{headers})).status,403);
+  f.DB.raw.exec("UPDATE moderators SET position='Менеджер' WHERE id='actor'");
+  assert.equal((await read('/api/server/staff-checks')).total,2);
+  assert.equal((await read('/api/server/checks?moderator=SecondMod')).total,1);
+  assert.equal((await read('/api/server/staff-checks?moderator=SECOND')).items[0].player,'OtherPlayer');
+  assert.equal((await read('/api/server/staff-checks?player=TEST')).items[0].moderator,'FirstMod');
+  assert.equal((await read('/api/server/staff-checks?player=TEST&moderator=SECOND')).total,0);
  }finally{await f.close();}
 });
 

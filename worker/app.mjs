@@ -4,7 +4,7 @@ import { discordIdValid, discordInteraction, drainDiscordJobs, logStaffRemoval }
 import { actionLogs, canReadActionLogs } from './action-logs.mjs';
 import { serverData, staffActivity } from './server-data.mjs';
 import { minecraftSkin, minecraftTexture } from './minecraft-skins.mjs';
-import { checkBridge, webChecks, checkChatHistory } from './web-checks.mjs';
+import { checkBridge } from './check-bridge.mjs';
 import { Store } from './store.mjs';
 import { authorizationURL, exchangeIdentity } from './providers.mjs';
 import { authConfig, authFailureCode, available, cookie, cookies, equal, json, randomToken, redirect, safeJson, secureResponse } from './security.mjs';
@@ -98,13 +98,8 @@ export function createHandler(assetMap, dependencies = {}) {
       const result = await route(new Request(request.url, { method: 'GET', headers: request.headers }), env, ctx);
       return new Response(null, { status: result.status, headers: result.headers });
     }
-    if(['/api/server/sync','/api/server/checks','/api/server/summary','/api/server/leaderboard'].includes(path))return serverData(request,env,path.endsWith('/sync')?null:await getSession(),url);
+    if(['/api/server/sync','/api/server/checks','/api/server/staff-checks','/api/server/summary','/api/server/leaderboard'].includes(path))return serverData(request,env,path.endsWith('/sync')?null:await getSession(),url);
     if(path==='/api/check-bridge')return checkBridge(request,env);
-    if(path==='/api/work/checks/chat')return checkChatHistory(request,env,await getSession(),url);
-    if(path==='/api/work/checks'){
-      const session=await getSession();
-      return webChecks(request,env,session,session&&csrfOk(request,config,session));
-    }
     const skinMatch=path.match(/^\/api\/minecraft-skin\/([A-Za-z0-9_]{1,16})$/);
     if(skinMatch&&request.method==='GET'){
       const session=await getSession();

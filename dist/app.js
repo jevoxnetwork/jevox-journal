@@ -4,7 +4,7 @@ import { manualMarkupPrefix, readFormattedManual, saveFormattedManual, manualLin
 import { createCursorWeb } from './cursor-web.mjs';
 import { createBackgroundParticles, normalizeParticles, particleSliders, particleStyles } from './background-particles.mjs';
 import { enableSkinRotation } from './skin-rotation.mjs';
-import { checksPage, callPage, loadChecks, loadCall, bindCheckWork } from './check-work.mjs';
+import { checksPage, loadChecks, bindCheckWork } from './check-work.mjs';
 const $=(s,el=document)=>el.querySelector(s), $$=(s,el=document)=>[...el.querySelectorAll(s)];
 const account=JSON.parse($('#auth-session').textContent);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -19,18 +19,16 @@ paths.archive='<rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v12h
 const icon=n=>`<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n]||paths.book}</svg>`;
 const pages={settings:['Настройки','settings'],profile:['Личный профиль','users'],overview:['Ваш журнал','book'],logs:['Логи действий','book'],team:['Команда проекта','users'],management:['Управление составом','shield'],former:['Бывший состав','users'],stats:['Статистика','trend'],manuals:['Мануалы','book'],top:['Топ состава','trend']};
 const myPosition=account.user.position;
-const canCallCheck=positions.indexOf(myPosition)>=0&&positions.indexOf(myPosition)<=positions.indexOf('Саппорт');
 pages.checks=['Проверки','scan'];
-if(canCallCheck)pages['check-call']=['Вызов на проверку','shield'];
-bindCheckWork(account.csrf);
+if(rosterEditor())pages['staff-checks']=['Проверки состава','scan'];
+bindCheckWork();
 const isOwner=myPosition==='Владелец';
 const canClearStaffWork=canDeleteFormerRecord(myPosition);
 const canReadLogs=canViewStaff(myPosition);
 const mayManageManuals=canManageManuals(myPosition);
 const groups=[
-  {label:'Журнал',routes:['overview','team']},
-  {label:'Работа',routes:['checks',...(canCallCheck?['check-call']:[])]},
-  {label:'Управление',routes:[...(rosterEditor()?['management','former']:[]),...(canReadLogs?['logs']:[])]},
+  {label:'Журнал',routes:['overview','team','checks']},
+  {label:'Управление',routes:[...(rosterEditor()?['management','staff-checks','former']:[]),...(canReadLogs?['logs']:[])]},
   {label:'Ресурсы',routes:['manuals']},
   {label:'Активности',routes:['stats','top']},
 ].filter(group=>group.routes.length||group.placeholder);
@@ -731,7 +729,7 @@ async function loadFormerArchive(){
 document.addEventListener('input',event=>{
   if(event.target.id==='former-search')renderFormerList();
 });
-function render(){navigation();let html=route==='settings'?settingsPage():route.startsWith('manuals/')?manualSubpage():(route==='profile'||route.startsWith('profile/'))?profilePage():route==='logs'?actionLogsPage():route==='checks'?checksPage():route==='check-call'?callPage():route==='top'?leaderboardPage():route==='overview'?overview():route==='team'?team():route==='former'?formerArchive():route==='management'?management():route==='stats'?title('stats','Активность модерации.')+empty('Статистика появится после подключения сервера.'):manualPage();$('#main').innerHTML=`<div class="route-content ${['team','management','former','logs'].includes(route)?'staff-route':''}">${html}</div>`;document.title=(pages[route]?.[0]||(route.startsWith('profile/')?'Профиль сотрудника':'Мануал'))+' — Jevox Journal';if(route.startsWith('manuals/'))loadManualSubpage(route);if(route==='management')loadManagement();if(route==='former')loadFormerArchive();if(route==='logs')loadActionLogs();if(route==='manuals')loadManuals();if(route==='overview')loadServerSummary();if(route==='top')loadLeaderboard();if(route==='checks')loadChecks();if(route==='check-call')loadCall();if(route==='profile'||route.startsWith('profile/'))loadPersonalProfile();}
+function render(){navigation();let html=route==='settings'?settingsPage():route.startsWith('manuals/')?manualSubpage():(route==='profile'||route.startsWith('profile/'))?profilePage():route==='logs'?actionLogsPage():route==='checks'||route==='staff-checks'?checksPage(route==='staff-checks',icon):route==='top'?leaderboardPage():route==='overview'?overview():route==='team'?team():route==='former'?formerArchive():route==='management'?management():route==='stats'?title('stats','Активность модерации.')+empty('Статистика появится после подключения сервера.'):manualPage();$('#main').innerHTML=`<div class="route-content ${['team','management','former','logs'].includes(route)?'staff-route':''}">${html}</div>`;document.title=(pages[route]?.[0]||(route.startsWith('profile/')?'Профиль сотрудника':'Мануал'))+' — Jevox Journal';if(route.startsWith('manuals/'))loadManualSubpage(route);if(route==='management')loadManagement();if(route==='former')loadFormerArchive();if(route==='logs')loadActionLogs();if(route==='manuals')loadManuals();if(route==='overview')loadServerSummary();if(route==='top')loadLeaderboard();if(route==='checks'||route==='staff-checks')loadChecks();if(route==='profile'||route.startsWith('profile/'))loadPersonalProfile();}
 async function loadStaff(){try{const r=await fetch('/api/staff',{cache:'no-store'});if(!r.ok)throw Error();staff=(await r.json()).users;const owners=$('#team-owners');if(owners)owners.outerHTML=ownerCards(staff);if(route==='team'){const input=$('#team-search');if(input)searchTeam(input.value);else render()}}catch{toast('Не удалось загрузить состав.') }}
 async function loadManagement(){const box=$('#management-list');if(!box)return;try{const r=await fetch('/api/admin/moderators',{cache:'no-store'});if(!r.ok)throw Error();const payload=await r.json(),result=payload.moderators;if(!box.isConnected)return;moderators=result;box.innerHTML=result.length?`<table class="roster"><thead><tr><th>Ник</th><th>Должность</th><th>ВКонтакте</th><th></th></tr></thead><tbody>${positions.map(position=>{const list=result.filter(m=>m.position===position);return list.length?`<tr class="roster-group"><th colspan="4">${esc(position)} <span>${list.length}</span></th></tr>${list.map(m=>`<tr><td><button class="roster-name" data-moderator-id="${esc(m.id)}">${esc(m.nickname)} <span>↗</span></button></td><td>${esc(m.position)}</td><td>${vkLink(m.vk_id)}</td><td class="roster-actions"><div class="management-actions"><button class="button" data-route="profile/${esc(m.id)}">Профиль</button>${canEditMember(myPosition,m.position)?`<button class="button" data-edit-moderator="${esc(m.id)}">Изменить</button>`:''}${canAssignPosition(myPosition,m.position)?`<button class="button danger-button" data-remove-moderator="${esc(m.id)}">Снять</button>`:''}</div></td></tr>`).join('')}`:''}).join('')}</tbody></table>`:'<div class="roster-empty">Пока никого нет в составе.</div>'}catch{if(box.isConnected)box.textContent='Не удалось загрузить состав.'}}
 function formatDate(date){return date?esc(date.split('-').reverse().join('.')):'Не указана'}
