@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1793632423662,
+      "tag": "0000_long_matthew_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793682834204,
+      "tag": "0001_married_ezekiel",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793704263329,
+      "tag": "0002_glossy_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793705413561,
+      "tag": "0003_flowery_nuke",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793706102774,
+      "tag": "0004_perpetual_darkhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793706384823,
+      "tag": "0005_moaning_spacker_dave",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793707093638,
+      "tag": "0006_stormy_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793708355237,
+      "tag": "0007_real_wonder_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793708808199,
+      "tag": "0008_green_black_cat",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793709112985,
+      "tag": "0009_thin_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793709824130,
+      "tag": "0010_happy_human_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793740918745,
+      "tag": "0011_lowly_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793741718607,
+      "tag": "0012_ambitious_masque",
+      "breakpoints": true
+    }
+  ]
+}

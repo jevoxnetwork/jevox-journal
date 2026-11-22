@@ -1,0 +1,42 @@
+.login-page{min-height:100vh;background:#060805}.login-shell{max-width:1250px;width:calc(100% - 80px);margin:0 auto}.login-top{height:110px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #25291e}.login-top-label{font:11px var(--mono);letter-spacing:2px;color:#838b75}.login-main{min-height:calc(100vh - 190px);display:grid;grid-template-columns:1fr 470px;align-items:center;gap:100px;padding:65px 0}.login-intro{position:relative}.login-intro>.eyebrow{font-size:10px;letter-spacing:2px;color:#9ca489;margin-bottom:27px}.login-intro h1{position:relative;z-index:1;font-size:72px;letter-spacing:-4px;font-weight:550;line-height:1.04}.login-intro h1>span{color:#bdbda2}.login-lead{position:relative;z-index:1;max-width:360px;margin-top:25px;font-size:15px;color:#a7ad99;line-height:1.8}.login-art{position:relative;height:210px;border-radius:16px;background:url('/assets/jevox-arena.jpg') right center/cover;filter:saturate(.3);margin-top:30px;opacity:.7;mask-image:linear-gradient(to right,transparent,#000 30%,#000 90%,transparent),linear-gradient(transparent,#000 20%,#000 80%,transparent);mask-composite:intersect}.login-caption{margin-top:12px;font:9px var(--mono);color:#6c765b;letter-spacing:1.8px}.login-caption span{margin:0 9px;color:#48523a}.login-card{padding:38px;border-radius:25px;box-shadow:0 30px 100px #0006,inset 0 1px #ffffff07;background:linear-gradient(135deg,#171b13,#0c1009)}.login-symbol{width:46px;height:46px;border:1px solid #414a33;border-radius:14px;color:#d1d6bc;display:flex;align-items:center;justify-content:center;margin-bottom:30px;background:#b9c89008}.login-symbol svg{width:23px;height:23px}.login-card .eyebrow{font-size:10px;letter-spacing:1.8px;color:#959f81;margin-bottom:12px}.login-card h2{font-size:31px;font-weight:550;letter-spacing:-1.3px}.login-description{margin-top:15px;color:#a0aa8e;font-size:13px;line-height:1.8}.provider-buttons{display:grid;gap:12px;margin-top:29px}.provider-button{width:100%;min-height:61px;padding:12px 15px;border:1px solid #424a37;border-radius:13px;color:#e8eddf;background:linear-gradient(115deg,#282f21,#1b2216);display:flex;align-items:center;text-align:left;gap:14px;font-size:14px;font-weight:500;transition:background .2s,border-color .2s,transform .2s}.provider-button:not(:disabled):hover{border-color:#8a9876;background:#303b25;transform:translateY(-1px)}.provider-button:disabled{opacity:.46;cursor:not-allowed}.provider-icon{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;flex-shrink:0}.telegram{background:#3b91b41f;color:#8fc7df}.telegram svg{height:21px;width:21px;fill:#8fc7df;stroke:none}.vk{font-weight:700;font-family:Arial,sans-serif;font-size:17px;letter-spacing:-1px;color:#a4c0ee;background:#466eae26}.provider-arrow{margin-left:auto;color:#a7b393;font-size:18px}.provider-notice{color:#929f7f;font-size:11px;line-height:1.8;margin-top:18px}.login-error{font-size:12px;line-height:1.7;background:#c58d6f0c;border:1px solid #684b36;padding:12px 14px;border-radius:10px;color:#d6ac8d;margin-top:17px}.login-privacy{display:flex;gap:11px;align-items:flex-start;margin-top:27px;padding-top:22px;border-top:1px solid #303725}.login-privacy svg{width:16px;height:16px;flex-shrink:0;color:#8c9a75;margin-top:3px}.login-privacy p{font-size:11px;line-height:1.8;color:#8b9877}.login-bottom{margin-top:30px;color:#8e9c78;font-size:10px;display:flex;align-items:center;gap:9px}.login-status-dot{width:5px;height:5px;background:#a6ba82;border-radius:50%;box-shadow:0 0 10px #a6ba8233}.login-footer{border-top:1px solid #25291e;min-height:80px;display:flex;align-items:center;justify-content:space-between;gap:20px;color:#6b775a;font:9px var(--mono);letter-spacing:1px}.identity-details{margin:24px 0 0}.identity-details>div{padding:14px 0;display:flex;justify-content:space-between;gap:15px;border-bottom:1px solid #303725;font-size:12px}.identity-details dt{color:#91a079}.identity-details dd{margin:0;color:#d4dec2;text-align:right;overflow-wrap:anywhere}.pending-actions{display:flex;gap:10px;margin-top:25px}.pending-actions button{flex:1}.access-user{padding:17px 0;border-bottom:1px solid #303725}.access-user-top{display:flex;justify-content:space-between;gap:12px;font-size:14px}.access-user p{font:11px var(--mono);color:#9ba987;margin:8px 0 12px;overflow-wrap:anywhere}.access-user-form{display:flex;gap:8px;flex-wrap:wrap}.access-user-form .input{flex:1;font-size:12px;min-width:110px}.access-user-form .button{font-size:12px}.access-list{max-height:55vh;overflow:auto}.auth-provider-label{font:10px var(--mono);color:#95a67c;padding:9px 12px;border-bottom:1px solid #303725;margin-bottom:5px}@media(max-width:1100px){.login-main{gap:45px;grid-template-columns:1fr 430px}.login-intro h1{font-size:60px}.login-card{padding:30px}.login-shell{width:calc(100% - 64px)}.login-art{height:160px}}@media(max-width:800px){.login-main{grid-template-columns:1fr;max-width:470px;margin:0 auto;padding:42px 0;gap:30px}.login-intro h1{font-size:45px;line-height:1.1;letter-spacing:-2.2px}.login-intro h1 br{display:none}.login-intro h1 br:after{content:' '}.login-intro>.eyebrow{margin-bottom:15px}.login-lead{font-size:13px;margin-top:16px}.login-art,.login-caption{display:none}.login-card{padding:30px}.login-top{height:85px}.login-footer{font-size:8px;min-height:75px}.login-top-label{font-size:9px;letter-spacing:1px}}@media(max-width:480px){.login-shell{width:calc(100% - 36px)}.login-top-label{max-width:110px;text-align:right;line-height:1.8}.login-main{padding:35px 0;gap:26px;min-height:0}.login-intro h1{font-size:38px}.login-intro>.eyebrow{font-size:8px;letter-spacing:1.2px}.login-card{padding:26px 22px;border-radius:20px}.login-card h2{font-size:27px}.login-description{font-size:12px}.provider-button{font-size:12px;gap:10px;padding:11px 12px;min-height:58px}.login-footer{align-items:flex-start;justify-content:center;flex-direction:column;gap:9px;padding:20px 0}.login-symbol{margin-bottom:24px}.login-lead{font-size:12px}.pending-actions{flex-direction:column}}
+
+/* Full-screen sign-in. */
+.login-page{
+  min-height:100vh;
+  min-height:100dvh;
+  background:linear-gradient(#0b100962,#0b10098c),url('/assets/jevox-arena.jpg') center / cover no-repeat #10140c;
+}
+.login-page .login-main{
+  min-height:100vh;
+  min-height:100dvh;
+  display:grid;
+  place-items:center;
+  grid-template-columns:minmax(0,1fr);
+  margin:0;
+  padding:24px 16px;
+}
+.login-main .login-card{
+  width:min(100%,400px);
+  min-width:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  text-align:center;
+}
+.login-main .login-card h1,.login-main .login-card h2{
+  margin:0 0 8px;
+  font-size:clamp(26px,5vw,34px);
+  letter-spacing:-.035em;
+  line-height:1.15;
+  color:#fffdf5;
+  text-shadow:0 2px 12px #000c;
+}
+.login-main .login-description{margin:0 0 26px;color:#f3f1e4;text-shadow:0 1px 8px #000}
+.login-main .provider-buttons{gap:10px}
+.login-main .provider-button{border-color:#ffffff38;border-radius:10px;background:#1d231bec;text-align:left}
+.login-main .provider-button:hover:not(:disabled){border-color:#acb684;background:#303826}
+.login-main .provider-notice:not([hidden]),.login-main .login-error:not([hidden]){background:#161a12ed;padding:10px;border-radius:8px;color:#f3f1e4}
+.login-main .pending-actions{justify-content:center}
+.login-main .identity-details{background:#161a12ed;border-radius:10px;padding:12px}

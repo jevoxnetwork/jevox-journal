@@ -1,0 +1,35 @@
+{
+  "name": "jevox-discord-presence",
+  "main": "worker/discord-presence.mjs",
+  "compatibility_date": "2026-07-30",
+  "workers_dev": true,
+  "rules": [{"type":"Data","globs":["**/discord-*.png","**/discord-ticket-*.jpg"],"fallthrough":true}],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PRESENCE",
+        "class_name": "DiscordPresence"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "DiscordPresence"
+      ]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "newcube-journal-auth",
+      "database_id": "8f07fc71-4211-45cc-8874-282de44a17c3"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  }
+}

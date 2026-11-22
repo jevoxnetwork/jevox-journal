@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a07"><title>Вход — Jevox Journal</title><meta name="description" content="Вход в журнал модерации через Telegram или ВКонтакте."><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/auth.css"></head>
+<body class="login-page">
+<main class="login-main">
+<div class="login-card">
+<div id="login-choice"><h1 id="login-title">Вход для команды</h1><p class="login-description">Войдите через аккаунт, привязанный к вашему профилю.</p>
+<div class="provider-buttons"><button class="provider-button" id="telegram-login" disabled><span class="provider-icon telegram"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 17-7-4 16-5-6-4 3 1-6 9-5-7 7z"/></svg></span><span>Войти через Telegram</span><span class="provider-arrow">↗</span></button><button class="provider-button" id="vk-login" disabled><span class="provider-icon vk">VK</span><span>Войти через ВКонтакте</span><span class="provider-arrow">↗</span></button></div>
+<p class="login-error" id="login-error" role="alert" hidden></p><p class="provider-notice" id="provider-notice" role="status">Проверяем доступные способы входа…</p>
+</div>
+<div id="account-pending" hidden><div class="eyebrow" id="pending-label">ЛИЧНОСТЬ ПОДТВЕРЖДЕНА</div><h2 id="pending-title">Ожидаем доступ</h2><p class="login-description" id="pending-description">Ваш аккаунт подтверждён. Руководитель должен добавить вас в состав журнала.</p><dl class="identity-details"><div><dt>Аккаунт</dt><dd id="identity-name"></dd></div><div><dt>Способ входа</dt><dd id="identity-provider"></dd></div><div><dt>ID аккаунта</dt><dd id="identity-id"></dd></div></dl><p class="provider-notice">Передайте ID аккаунта руководителю, чтобы получить доступ.</p><div class="pending-actions"><button class="button primary" id="check-access">Проверить доступ</button><button class="button" id="logout-pending">Выйти</button></div><p id="pending-error" class="login-error" role="alert" hidden></p></div>
+</div></main>
+<script src="/auth.js"></script></body></html>

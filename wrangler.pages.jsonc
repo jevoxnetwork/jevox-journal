@@ -1,0 +1,19 @@
+{
+  "name": "jevoxjournal",
+  "compatibility_date": "2026-07-30",
+  "pages_build_output_dir": ".wrangler/pages-output",
+  "vars": {
+    "PUBLIC_URL": "https://jevoxjournal.pages.dev",
+    "TELEGRAM_CLIENT_ID": "9295550504",
+    "ADMIN_TELEGRAM_IDS": "7489708694",
+    "ADMIN_VK_IDS": "591704708"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "newcube-journal-auth",
+      "database_id": "8f07fc71-4211-45cc-8874-282de44a17c3",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}
