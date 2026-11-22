@@ -449,6 +449,40 @@ test('Game check events retain history; only managers and above can search staff
  }finally{await f.close();}
 });
 
+test('FastFreeze LiteBans batches feed personal and leaderboard totals without double-counting IDs',async()=>{
+ const f=setup({position:'Менеджер'});
+ try{
+  f.env.CHECK_BRIDGE_TOKEN='t'.repeat(64);
+  f.DB.raw.exec("UPDATE moderators SET nickname='ActiveMod' WHERE id='actor'");
+  const session=await login(f),headers={Cookie:session.sessionCookie};
+  const report=records=>f.request('/api/check-bridge',{method:'POST',
+    headers:{Authorization:'Bearer '+f.env.CHECK_BRIDGE_TOKEN},
+    body:JSON.stringify({op:'sync',kind:'punishments',records}),
+  });
+  const today=Date.now()-5;
+  const original={player:'Target',moderator:'activemod',reason:'Test',started:today,ended:0};
+  const records=['ban','mute','warn','kick'].map(type=>({...original,id:type+'-4',type,active:type==='kick'?0:1}));
+  const cutoff=today-1000;
+  f.DB.raw.prepare("INSERT INTO server_retention (kind,cutoff) VALUES ('punishments',?)").run(cutoff);
+  const archived={...records[0],id:'ban-before-cutoff',started:cutoff};
+  const other={...records[0],id:'ban-other',moderator:'OtherMod'};
+  assert.equal((await report([...records,archived,other])).status,200);
+  assert.equal((await report([{...records[0],active:0,removed_by:'OtherMod'},...records.slice(1)])).status,200);
+  const summary=await(await f.request('/api/server/summary',{headers})).json();
+  assert.equal(summary.punishments,4);
+  assert.equal(summary.punishmentsToday,4);
+  assert.equal(summary.banMuteTotal,2);
+  const profile=await(await f.request('/api/staff/actor/profile',{headers})).json();
+  assert.equal(profile.activity.punishments,4);
+  for(const period of ['all','month']){
+    const board=await(await f.request('/api/server/leaderboard?period='+period,{headers})).json();
+    assert.equal(board.staff[0].punishments,4);
+  }
+  assert.deepEqual(f.DB.raw.prepare("SELECT active,removed_by FROM server_punishments WHERE id='ban-4'").get(),
+    Object.assign(Object.create(null),{active:0,removed_by:'OtherMod'}));
+ }finally{await f.close()}
+});
+
 test('Personal profile only returns history for the signed-in staff member',async()=>{
   const f=setup({admin:true});
   try {

@@ -77,6 +77,7 @@ final class CheckBridge {
         restoreOutbox();
         if (Bukkit.getPluginManager().isPluginEnabled("LiteBans")) {
             try {
+                Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, new JournalPunishments(plugin, this), 60, 200);
                 stopBanListener = JournalBans.listen(plugin, this);
             } catch (RuntimeException | LinkageError error) {
                 plugin.getLogger().warning("LiteBans hook unavailable; check history remains enabled.");
@@ -118,17 +119,13 @@ final class CheckBridge {
         Bukkit.getScheduler().runTaskLater(plugin, () -> recent.remove(player, finished), 100);
     }
 
-    void banned(UUID player, String id, String moderator, String moderatorUuid, String reason,
-                long started, long expires, boolean activeBan) {
+    void banned(UUID player, String moderator, long started) {
         Check ongoing = active.get(player);
         if (ongoing != null && started < ongoing.started()) return;
         Finished closed = recent.get(player);
         Check check = ongoing != null ? ongoing : closed == null ? null : closed.check();
         if (check == null || started < check.started() || (ongoing == null && started > closed.ended() + 5000)) return;
 
-        enqueue("punishments", object("id", "ban-" + id, "player", check.data().getSuspectName(),
-                "player_uuid", player.toString(), "moderator", moderator, "moderator_uuid", moderatorUuid,
-                "reason", reason, "started", started, "ended", Math.max(0, expires), "type", "ban", "active", activeBan ? 1 : 0));
         if (ongoing != null) {
             finished(ongoing.data(), "Забанен", moderator);
         } else {
@@ -150,6 +147,15 @@ final class CheckBridge {
         dirty = true;
     }
 
+    void syncPunishments(List<JsonObject> records) throws IOException, InterruptedException {
+        post(object("op", "sync", "kind", "punishments", "records", records));
+    }
+
+    private void post(JsonObject packet) throws IOException, InterruptedException {
+        var response = transport.post(packet.toString());
+        if (response.statusCode() != 200) throw new IOException("HTTP " + response.statusCode());
+    }
+
     private void exchange() {
         if (!exchanging.compareAndSet(false, true)) return;
         try {
@@ -160,8 +166,7 @@ final class CheckBridge {
                     packet = outbox.peek();
                 }
                 if (packet == null) return;
-                var response = transport.post(gson.toJson(packet));
-                if (response.statusCode() != 200) throw new IOException("HTTP " + response.statusCode());
+                post(packet);
                 synchronized (this) {
                     outbox.removeFirst();
                     dirty = true;

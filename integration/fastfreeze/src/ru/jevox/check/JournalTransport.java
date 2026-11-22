@@ -13,7 +13,7 @@ final class JournalTransport {
     private final HttpClient client;
     private final String token;
     private final URI fallback;
-    private URI endpoint;
+    private volatile URI endpoint;
 
     JournalTransport(HttpClient client, URI endpoint, URI fallback, String token) {
         this.client = client;
@@ -27,11 +27,12 @@ final class JournalTransport {
     }
 
     HttpResponse<String> post(String json) throws IOException, InterruptedException {
+        URI target = endpoint;
         try {
-            return post(endpoint, json);
+            return post(target, json);
         } catch (HttpConnectTimeoutException | ConnectException error) {
             // A failed connection could not deliver the request.
-            if (fallback == null || endpoint.equals(fallback)) throw error;
+            if (fallback == null || target.equals(fallback)) throw error;
             HttpResponse<String> response = post(fallback, json);
             if (response.statusCode() == 200) endpoint = fallback;
             return response;

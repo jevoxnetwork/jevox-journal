@@ -22,9 +22,8 @@ final class JournalBans {
                 } catch (IllegalArgumentException | NullPointerException ignored) {
                     return;
                 }
-                Bukkit.getScheduler().runTask(plugin, () -> bridge.banned(player, Long.toString(entry.getId()),
-                        Objects.toString(entry.getExecutorName(), ""), Objects.toString(entry.getExecutorUUID(), ""),
-                        Objects.toString(entry.getReason(), ""), entry.getDateStart(), entry.getDateEnd(), entry.isActive()));
+                Bukkit.getScheduler().runTask(plugin, () -> bridge.banned(player,
+                        Objects.toString(entry.getExecutorName(), ""), entry.getDateStart()));
             }
         };
         events.register(listener);
