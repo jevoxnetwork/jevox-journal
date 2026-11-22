@@ -41,9 +41,6 @@ export async function serverData(request,env,session,url) {
   }
   if(player.length>100)return json({error:'Слишком длинный запрос.'},400);
   if(player){filters.push('instr(lower(player),lower(?))>0');args.push(player)}
-  const reason=(params.get('reason')||'').trim();
-  if(reason.length>150)return json({error:'Слишком длинная причина.'},400);
-  if(reason){filters.push('instr(reason,?)>0');args.push(reason)}
   for(const [key,op,offset] of [['from','>=',0],['to','<',86400000]]){
     const date=params.get(key);
     if(!date)continue;
@@ -62,7 +59,7 @@ export async function serverData(request,env,session,url) {
  const where=filters.length?' WHERE '+filters.join(' AND '):'';
  const page=Math.max(1,Math.min(100000,parseInt(params.get('page')||'1')||1));
  const total=(await db.prepare(`SELECT COUNT(*) AS n FROM server_${kind}`+where).bind(...args).first()).n;
- const columns=kind==='checks'?`*, (SELECT p.reason FROM server_punishments p WHERE p.type='ban' AND server_checks.player_uuid<>'' AND p.player_uuid=server_checks.player_uuid AND p.started>=server_checks.started AND p.started<=CASE WHEN server_checks.ended=0 THEN 9223372036854775807 ELSE server_checks.ended+5000 END ORDER BY p.started LIMIT 1) AS ban_reason`:'*';
+ const columns=kind==='checks'?`${fields.filter(field=>field!=='reason').join(',')}, (SELECT p.reason FROM server_punishments p WHERE p.type='ban' AND server_checks.player_uuid<>'' AND p.player_uuid=server_checks.player_uuid AND p.started>=server_checks.started AND p.started<=CASE WHEN server_checks.ended=0 THEN 9223372036854775807 ELSE server_checks.ended+5000 END ORDER BY p.started LIMIT 1) AS ban_reason`:'*';
  const items=(await db.prepare(`SELECT ${columns} FROM server_${kind}`+where+' ORDER BY started DESC,id DESC LIMIT 30 OFFSET ?').bind(...args,(page-1)*30).all()).results;
  return json({items,total,page,pages:Math.ceil(total/30),sync});
 }

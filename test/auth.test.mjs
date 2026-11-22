@@ -427,10 +427,11 @@ test('Game check events retain history; only managers and above can search staff
   assert.equal((await sync([first])).status,200);
   const read=async path=>(await f.request(path,{headers})).json();
   const today=new Date(Date.now()+10800000).toISOString().slice(0,10);
-  const personal=await read('/api/server/checks?player=test&reason='+encodeURIComponent('Жалоба')+'&from='+today+'&to='+today);
+  const personal=await read('/api/server/checks?player=test&from='+today+'&to='+today);
   assert.equal(personal.total,1);
   assert.equal(personal.items[0].started,started);
   assert.equal(personal.items[0].ended,ended);
+  assert.equal(Object.hasOwn(personal.items[0],'reason'),false);
   assert.equal(personal.items[0].result,'Отпущен');
   assert.equal(personal.items[0].removed_by,'OtherModerator');
   assert.equal((await read('/api/server/summary')).checks,1);
@@ -438,7 +439,9 @@ test('Game check events retain history; only managers and above can search staff
   f.DB.raw.exec("UPDATE moderators SET position='Спектатор' WHERE id='actor'");
   assert.equal((await f.request('/api/server/staff-checks',{headers})).status,403);
   f.DB.raw.exec("UPDATE moderators SET position='Менеджер' WHERE id='actor'");
-  assert.equal((await read('/api/server/staff-checks')).total,2);
+  const staffChecks=await read('/api/server/staff-checks');
+  assert.equal(staffChecks.total,2);
+  assert.ok(staffChecks.items.every(item=>!Object.hasOwn(item,'reason')));
   assert.equal((await read('/api/server/checks?moderator=SecondMod')).total,1);
   assert.equal((await read('/api/server/staff-checks?moderator=SECOND')).items[0].player,'OtherPlayer');
   assert.equal((await read('/api/server/staff-checks?player=TEST')).items[0].moderator,'FirstMod');

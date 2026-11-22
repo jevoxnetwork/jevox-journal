@@ -15,7 +15,6 @@ export function checksPage(staff, icon) {
     <form class="panel checks-filters" id="check-filters" data-staff="${staff}">
       <label>Ник игрока<input class="input" name="player" type="search" maxlength="100" placeholder="Найти игрока"></label>
       ${staff ? '<label>Ник модератора<input class="input" name="moderator" type="search" maxlength="100" placeholder="Найти модератора"></label>' : ''}
-      <label>Причина<input class="input" name="reason" type="search" maxlength="150" placeholder="Фрагмент причины"></label>
       <label>С<input class="input" name="from" type="date"></label>
       <label>По<input class="input" name="to" type="date"></label>
       <div class="checks-filter-actions"><button class="button primary" type="submit">${icon('scan')} Найти</button><button class="button" type="reset">Сбросить</button></div>
@@ -40,7 +39,6 @@ function checkCard(item) {
       <div><dt>Завершили</dt><dd>${time(item.ended)}</dd></div>
       ${item.removed_by ? `<div><dt>Кто завершил</dt><dd>${escape(item.removed_by)}</dd></div>` : ''}
     </dl>
-    ${item.reason ? `<p class="checks-reason"><span class="checks-label">Причина</span>${escape(item.reason)}</p>` : ''}
   </li>`;
 }
 

@@ -958,8 +958,8 @@
 .checks-heading p,.checks-results-heading span,.checks-label,.checks-card dt { color: var(--theme-muted); }
 .checks-icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--theme-line); border-radius: 13px; background: var(--theme-raised); color: var(--theme-accent); }
 .checks-icon svg,.checks-filter-actions svg { width: 17px; height: 17px; }
-.checks-filters { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)) repeat(2,minmax(125px,.7fr)) auto; align-items: end; gap: 12px; padding: 16px; }
-.checks-filters[data-staff="true"] { grid-template-columns: repeat(3,minmax(0,1fr)) repeat(2,minmax(117px,.7fr)) auto; }
+.checks-filters { display: grid; grid-template-columns: minmax(0,1fr) repeat(2,minmax(125px,.7fr)) auto; align-items: end; gap: 12px; padding: 16px; }
+.checks-filters[data-staff="true"] { grid-template-columns: repeat(2,minmax(0,1fr)) repeat(2,minmax(117px,.7fr)) auto; }
 .checks-filters label { display: grid; gap: 6px; color: var(--theme-muted); font-size: 12px; }
 .checks-filters .input { min-width: 0; width: 100%; margin: 0; }
 .checks-filter-actions { display: flex; gap: 7px; }
@@ -975,8 +975,6 @@
 .checks-result[data-state="ban"] { color: #f3aaa6; }
 .checks-card dl { display: grid; grid-template-columns: repeat(auto-fit,minmax(108px,1fr)); gap: 10px; padding: 11px; margin: 14px 0 0; border-radius: 10px; background: var(--theme-raised); }
 .checks-card dd { margin: 4px 0 0; font-size: 12px; }
-.checks-reason { margin: 12px 0 0; font-size: 13px; white-space: pre-wrap; }
-.checks-reason .checks-label { margin-bottom: 4px; }
 .checks-empty { margin-top: 14px; padding: 26px 12px; text-align: center; color: var(--theme-muted); }
 .checks-pages { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
 @media(max-width: 970px) {
