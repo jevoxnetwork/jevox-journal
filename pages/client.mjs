@@ -1,5 +1,4 @@
-const backend = 'https://jevox-github-api.1pirs.workers.dev';
-const loginOrigin = 'https://jevoxjournal.pages.dev';
+const backend = 'https://jevoxjournal.pages.dev';
 const key = 'jevox-journal.github-session';
 const verifierKey = 'jevox-journal.github-verifier';
 const site = '/jevox-journal/';
@@ -19,7 +18,7 @@ export async function startLogin(provider) {
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
   sessionStorage.setItem(verifierKey, verifier);
-  location.assign(loginOrigin + '/auth/' + provider + '/start?pages=' + base64url(new Uint8Array(digest)));
+  location.assign(backend + '/auth/' + provider + '/start?pages=' + base64url(new Uint8Array(digest)));
 }
 
 export async function exchangeLogin() {

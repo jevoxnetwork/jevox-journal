@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, '.wrangler/github-pages');
-const backend = 'https://jevox-github-api.1pirs.workers.dev';
+const backend = 'https://jevoxjournal.pages.dev';
 const base = '/jevox-journal/';
 const csp = [
   "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
@@ -48,10 +48,7 @@ await build({
       api.onLoad({ filter: /[\\/](auth|account|app)\.js$/ }, async args => {
         let contents = await readFile(args.path, 'utf8');
         if (args.path === path.join(root, 'dist/app.js')) {
-          contents = contents
-            .replaceAll("'/assets/skins/", "'" + base + 'assets/skins/')
-            .replace("path:'/assets/minecraft-textures/", "path:'" + base + 'assets/minecraft-textures/')
-            .replace("const texture='/assets/minecraft-textures/", "const texture='" + backend + '/assets/minecraft-textures/');
+          contents = contents.replaceAll("'/assets/", "'" + backend + '/assets/');
           return { contents, loader: 'js' };
         }
         if (![path.join(root, 'public/auth.js'), path.join(root, 'public/account.js')].includes(args.path)) return;

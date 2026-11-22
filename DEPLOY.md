@@ -28,5 +28,3 @@ npx wrangler@4.137.0 d1 migrations apply DB --remote --config wrangler.pages.jso
 ## Интерфейс на GitHub Pages
 
 Workflow **Publish GitHub Pages** собирает статический интерфейс из `main` и публикует на `https://jevoxnetwork.github.io/jevox-journal/`. Для проверки локальной сборки выполните `node scripts/build-github.mjs`. OAuth callback-и остаются на домене Cloudflare. Если меняется контракт API, сначала обновите Worker, затем опубликованный интерфейс.
-
-GitHub Pages обращается к API через Worker `jevox-github-api`. Для его обновления выполните `npx wrangler@4.137.0 deploy --config wrangler.github-relay.jsonc`. Worker перенаправляет запросы к существующему Cloudflare Pages и использует ту же базу через API журнала.
