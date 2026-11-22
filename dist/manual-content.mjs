@@ -21,7 +21,7 @@ export function cleanManualHTML(root) {
     if (source.nodeType !== Node.ELEMENT_NODE || source.namespaceURI !== 'http://www.w3.org/1999/xhtml' || ['SCRIPT','STYLE','IFRAME','SVG','MATH'].includes(source.tagName)) return;
     const node = tags.has(source.tagName) ? document.createElement(source.tagName) : null;
     if (source.tagName === 'IMG') {
-      const src = source.getAttribute('src') || '';
+      const src = source.getAttribute('data-journal-image') || source.getAttribute('src') || '';
       if (!imageSource.test(src)) return;
       node.setAttribute('src', src);
       node.alt = 'Фото из мануала';

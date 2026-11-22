@@ -1,3 +1,4 @@
+import { isPagesApi, pagesCors, pagesHome, pagesPreflight, pagesToken } from './github-pages.mjs';
 import { staffPositions, canAssignPosition, canDeleteFormerRecord, canEditRoster, canManageManuals, canViewStaff, hasStaffRank } from './staff-positions.mjs';
 import { canUseBanner, isProfileBanner } from './profile-banners.mjs';
 import { discordIdValid, discordInteraction, drainDiscordJobs, logStaffRemoval } from './discord.mjs';
@@ -7,7 +8,7 @@ import { minecraftSkin, minecraftTexture } from './minecraft-skins.mjs';
 import { checkBridge } from './check-bridge.mjs';
 import { Store } from './store.mjs';
 import { authorizationURL, exchangeIdentity } from './providers.mjs';
-import { authConfig, authFailureCode, available, cookie, cookies, equal, json, randomToken, redirect, safeJson, secureResponse } from './security.mjs';
+import { authConfig, authFailureCode, available, cookie, cookies, equal, hash, json, randomToken, redirect, safeJson, secureResponse } from './security.mjs';
 
 function publicUser(user) {
   if (!user) return null;
@@ -57,7 +58,7 @@ function validCalendarDate(value){
   return Number.isFinite(date.valueOf())&&date.toISOString().slice(0,10)===value;
 }
 function csrfOk(request, config, session) {
-  return request.headers.get('origin') === config.origin && equal(request.headers.get('x-csrf-token'), session.csrf);
+  return (request.headers.get('origin') === config.origin || isPagesApi(request)) && equal(request.headers.get('x-csrf-token'), session.csrf);
 }
 function one(url, key, limit = 2000) {
   const all = url.searchParams.getAll(key);
@@ -73,19 +74,22 @@ export function createHandler(assetMap, dependencies = {}) {
           .catch(()=>console.error('Discord roster refresh request failed')));
         ctx.waitUntil(drainDiscordJobs(env,6,{newest:true}).catch(()=>console.error('Discord role processing failed')));
       }
-      return secureResponse(response);
+      return secureResponse(pagesCors(request,response));
     }
     catch (error) {
       // Never log authorization codes, provider tokens, request URLs or secrets.
       const id = crypto.randomUUID(); console.error('Journal request failed', id, error?.name || 'Error');
-      return secureResponse(json({ error: 'Сервис временно недоступен. Попробуйте позже.', requestId: id }, 503));
+      return secureResponse(pagesCors(request,json({ error: 'Сервис временно недоступен. Попробуйте позже.', requestId: id }, 503)));
     }
   };
   async function route(request, env, ctx) {
     const url = new URL(request.url), path = url.pathname;
     if(path==='/api/discord/interactions'&&request.method==='POST')return discordInteraction(request,env,ctx);
     const config = authConfig(env, url.origin), cookieValues = cookies(request);
-    const token = cookieValues[config.sessionName];
+    if (request.method === 'OPTIONS' && path.startsWith('/api/')) return pagesPreflight(request);
+    const fromPages = isPagesApi(request);
+    const bearer = request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/);
+    const token = fromPages ? bearer?.[1] : cookieValues[config.sessionName];
     let store;
     const db = () => store ||= new Store(env.DB);
     const syncDiscordMember = memberId => {
@@ -124,6 +128,17 @@ export function createHandler(assetMap, dependencies = {}) {
       }
       return json({ ok: true, service: 'moderation-journal', runtime: 'cloudflare-worker', database: 'D1', providers: available(config) });
     }
+    if (request.method === 'POST' && path === '/api/auth/pages/exchange') {
+      if (!fromPages) return json({ error: 'Нет доступа.' }, 403);
+      let input;
+      try { input = await readBody(request, 512); } catch { return json({ error: 'Некорректный запрос.' }, 400); }
+      if (typeof input?.code !== 'string' || typeof input.verifier !== 'string' ||
+          !pagesToken.test(input.code) || !pagesToken.test(input.verifier)) return json({ error: 'Некорректный запрос.' }, 400);
+      const handoff = await db().consumeFlow('pages-handoff', await hash(input.verifier), input.code);
+      if (!handoff) return json({ error: 'Попытка входа устарела.' }, 401);
+      const session = await db().createSession(handoff.verifier);
+      return json({ token: session.token });
+    }
     if (request.method === 'GET' && path === '/api/auth/session') {
       const session = await getSession();
       return json({ user: publicUser(session), csrf: session?.csrf || null, providers: available(config) });
@@ -139,11 +154,17 @@ export function createHandler(assetMap, dependencies = {}) {
     const start = path.match(/^\/auth\/(telegram|vk)\/start$/);
     if (request.method === 'GET' && start) {
       const provider = start[1];
-      if (!available(config)[provider]) return redirect('/login?error=not_configured');
-      if (!(await db().limit(`start:${request.headers.get('cf-connecting-ip') || 'local'}`, 30, 600))) return redirect('/login?error=rate_limit');
+      const challenge = one(url, 'pages', 43);
+      const pages = pagesToken.test(challenge);
+      const fail = code => redirect((pages ? pagesHome : '/login') + '?error=' + code);
+      if (!available(config)[provider]) return fail('not_configured');
+      if (!(await db().limit(`start:${request.headers.get('cf-connecting-ip') || 'local'}`, 30, 600))) return fail('rate_limit');
       const browser = /^[A-Za-z0-9_-]{43}$/.test(cookieValues[config.flowName] || '') ? cookieValues[config.flowName] : randomToken();
       const flow = { state: randomToken(), verifier: randomToken(48), nonce: randomToken() };
       await db().saveFlow(provider, browser, flow);
+      if (pages) await db().saveFlow('pages-flow', browser, {
+        state: 'pages:' + flow.state, verifier: challenge, nonce: '',
+      });
       const response = redirect(await authorizationURL(config, provider, flow));
       response.headers.append('Set-Cookie', cookie(config, config.flowName, browser, 600));
       ctx.waitUntil(db().cleanup());
@@ -158,17 +179,25 @@ export function createHandler(assetMap, dependencies = {}) {
       if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !/^[A-Za-z0-9_-]{43}$/.test(browser)) return redirect('/login?error=expired');
       const flow = await db().consumeFlow(provider, browser, state);
       if (!flow) return redirect('/login?error=expired');
-      if (url.searchParams.has('error')) return redirect('/login?error=cancelled');
+      const pagesFlow = await db().consumeFlow('pages-flow', browser, 'pages:' + state);
+      const fail = code => redirect((pagesFlow ? pagesHome : '/login') + '?error=' + code);
+      if (url.searchParams.has('error')) return fail('cancelled');
       const code = one(url, 'code', 4096), deviceId = one(url, 'device_id', 1000);
-      if (!code || (provider === 'vk' && !deviceId)) return redirect('/login?error=invalid_response');
+      if (!code || (provider === 'vk' && !deviceId)) return fail('invalid_response');
       let stage = 'EXCHANGE';
       try {
         const identity = await (dependencies.exchangeIdentity || exchangeIdentity)(config, provider, flow, { code, state, deviceId });
         if (identity.provider !== provider || !identity.subject || !identity.providerId) throw new Error('INVALID_IDENTITY');
         stage = 'USER_STORE';
         const user = await db().upsertUser(identity, config);
-        if (user.status === 'blocked') return redirect('/login?error=blocked');
+        if (user.status === 'blocked') return fail('blocked');
         stage = 'SESSION_STORE';
+        if (pagesFlow) {
+          const handoff = randomToken();
+          await db().saveFlow('pages-handoff', pagesFlow.verifier, { state: handoff, verifier: user.id, nonce: '' }, 90);
+          await db().audit(user.id, 'login:' + provider);
+          return redirect(pagesHome + '#handoff=' + handoff);
+        }
         const session = await db().createSession(user.id, token);
         await db().audit(user.id, 'login:' + provider);
         const response = redirect(user.status === 'active' ? '/journal' : '/login');
@@ -179,7 +208,7 @@ export function createHandler(assetMap, dependencies = {}) {
         // Keep a bounded classification, never codes, tokens, URLs or secrets.
         try { await db().audit(null, 'login_failed:' + provider + ':' + failure); } catch {}
         console.error('OAuth verification failed', provider, failure);
-        return redirect('/login?error=provider_failed');
+        return fail('provider_failed');
       }
     }
     if(['/api/notifications','/api/notifications/read','/api/notifications/clear'].includes(path)) {

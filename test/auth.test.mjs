@@ -1037,3 +1037,38 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    assert.ok(DB.raw.prepare('SELECT deleted_at FROM discord_tickets WHERE id=?').get(complaint.id).deleted_at);
  }finally{await settle();DB.raw.close();}
 });
+
+test('GitHub Pages exchanges a verifier-bound one-time code and uses a restricted bearer session',async()=>{
+ const f=setup({position:'Менеджер'});
+ const origin='https://jevoxnetwork.github.io';
+ const verifier='a'.repeat(43),challenge=await hash(verifier);
+ try{
+  const begin=await f.request('/auth/telegram/start?pages='+challenge);
+  const state=new URL(begin.headers.get('location')).searchParams.get('state');
+  const cookie=begin.headers.get('set-cookie').split(';')[0];
+  const callback=await f.request('/auth/telegram/callback?code=valid&state='+state,{headers:{Cookie:cookie}});
+  const redirect=new URL(callback.headers.get('location'));
+  assert.equal(redirect.origin+redirect.pathname,origin+'/jevox-journal/');
+  assert.equal(callback.headers.get('set-cookie'),null);
+  const code=new URLSearchParams(redirect.hash.slice(1)).get('handoff');
+  const exchange=(given,from=origin)=>f.request('/api/auth/pages/exchange',{method:'POST',
+    headers:{Origin:from,'Content-Type':'application/json'},body:JSON.stringify({code,verifier:given})});
+  assert.equal((await exchange(verifier,'https://wrong.example')).status,403);
+  assert.equal((await exchange('b'.repeat(43))).status,401);
+  const accepted=await exchange(verifier);
+  assert.equal(accepted.status,200);
+  assert.equal(accepted.headers.get('access-control-allow-origin'),origin);
+  assert.equal((await exchange(verifier)).status,401);
+  const {token}=await accepted.json();
+  const headers={Origin:origin,Authorization:'Bearer '+token};
+  const session=(await(await f.request('/api/auth/session',{headers})).json());
+  assert.equal(session.user.status,'active');
+  assert.equal((await f.request('/api/server/staff-checks',{headers})).status,200);
+  assert.equal((await f.request('/api/server/staff-checks',{headers:{...headers,Origin:'https://wrong.example'}})).status,403);
+  assert.equal((await f.request('/api/server/staff-checks',{method:'OPTIONS',headers:{Origin:origin}})).status,204);
+  assert.equal((await f.request('/api/server/sync',{method:'OPTIONS',headers:{Origin:origin}})).status,403);
+  assert.equal((await f.request('/api/auth/logout',{method:'POST',headers})).status,403);
+  assert.equal((await f.request('/api/auth/logout',{method:'POST',headers:{...headers,'X-CSRF-Token':session.csrf}})).status,200);
+  assert.equal((await f.request('/api/server/staff-checks',{headers})).status,403);
+ }finally{await f.close()}
+});
