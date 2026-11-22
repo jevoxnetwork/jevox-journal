@@ -10,11 +10,7 @@
 
 Полная инструкция по Telegram, VK, секретам и выдаче первого административного доступа: [AUTH_SETUP.md](AUTH_SETUP.md).
 
-## Рабочий сайт
-
-Интерфейс публикуется через GitHub Actions на [GitHub Pages](https://jevoxnetwork.github.io/jevox-journal/). Авторизация Telegram и VK, API и база D1 работают через Cloudflare Pages.
-
-## Cloudflare API
+## Рабочий Cloudflare
 
 https://jevoxjournal.pages.dev
 

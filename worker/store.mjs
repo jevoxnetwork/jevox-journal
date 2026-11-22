@@ -14,9 +14,9 @@ export class Store {
       .bind(id, (window + 1) * seconds).first();
     return result.attempts <= max;
   }
-  async saveFlow(provider, browser, flow, lifetime = 600) {
+  async saveFlow(provider, browser, flow) {
     await this.db.prepare('INSERT INTO auth_flows (state_hash,browser_hash,provider,verifier,nonce,expires_at) VALUES (?,?,?,?,?,?)')
-      .bind(await hash(flow.state), await hash(browser), provider, flow.verifier, flow.nonce, now() + lifetime).run();
+      .bind(await hash(flow.state), await hash(browser), provider, flow.verifier, flow.nonce, now() + 600).run();
   }
   async consumeFlow(provider, browser, state) {
     return this.db.prepare('DELETE FROM auth_flows WHERE state_hash=? AND browser_hash=? AND provider=? AND expires_at>? RETURNING verifier,nonce')
