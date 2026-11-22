@@ -1,25 +1,25 @@
-# Настройка входа в журнал
+# Настройка входа в Jevox Journal
 
-Сервер: Cloudflare Workers. База учётных записей и сессий: Cloudflare D1.
+Рабочий сайт размещён на Cloudflare Pages. База учётных записей и сессий: Cloudflare D1.
 
 ## Адреса для рабочего сайта
 
 Адрес сайта / Allowed Origin:
 
 ```
-https://newcube-moderation-journal.1pirs.workers.dev
+https://jevoxjournal.pages.dev
 ```
 
 Telegram Redirect URI:
 
 ```
-https://newcube-moderation-journal.1pirs.workers.dev/auth/telegram/callback
+https://jevoxjournal.pages.dev/auth/telegram/callback
 ```
 
 VK Redirect URI:
 
 ```
-https://newcube-moderation-journal.1pirs.workers.dev/auth/vk/callback
+https://jevoxjournal.pages.dev/auth/vk/callback
 ```
 
 Схема, домен, путь и завершающий слеш должны совпадать с зарегистрированными адресами. В этих Redirect URI завершающего слеша нет.
@@ -49,13 +49,13 @@ https://newcube-moderation-journal.1pirs.workers.dev/auth/vk/callback
 
 ## Где хранить ключи
 
-Рабочий сервер развёрнут непосредственно в Cloudflare-аккаунте владельца, Worker `newcube-moderation-journal`, база `newcube-journal-auth`. Старый адрес `chatgpt.site` больше не используется для рабочего входа.
+Рабочий проект Cloudflare Pages называется `jevoxjournal`. Привязка к базе D1 указана в `wrangler.pages.jsonc`.
 
-Для локального запуска скопируйте `.env.example` в `.env` и заполните значения. Файл `.env` исключён из Git. Для Cloudflare установите секреты через Dashboard → Workers & Pages → newcube-moderation-journal → Settings → Variables and Secrets. Изменение локального `.env` само по себе не меняет облако.
+Для локального запуска скопируйте `.env.example` в `.env` и заполните значения. Файл `.env` исключён из Git. Для Cloudflare установите секреты через Dashboard → Workers & Pages → jevoxjournal → Settings → Variables and Secrets. Изменение локального `.env` само по себе не меняет облако.
 
-Также можно использовать `wrangler secret put TELEGRAM_CLIENT_ID`, `wrangler secret put TELEGRAM_CLIENT_SECRET` и `wrangler secret put VK_CLIENT_ID`. Вводите значения в интерактивный запрос, а не как аргументы команд.
+Также можно использовать `wrangler pages secret put <ИМЯ> --project-name jevoxjournal`. Вводите значения в интерактивный запрос, а не как аргументы команд.
 
-Не вставляйте секреты в HTML, JavaScript клиента, скриншоты или переписку. Client Secret и необязательный VK secret должны быть отмечены как secrets в настройках Cloudflare. Команда `npm run deploy` сохраняет существующие серверные переменные и секреты.
+Не вставляйте секреты в HTML, JavaScript клиента, скриншоты или переписку. Client Secret и необязательный VK secret должны быть отмечены как secrets в настройках Cloudflare. Параметры рабочего сайта задаются для окружения Production.
 
 `PUBLIC_URL` в облаке должен равняться адресу рабочего сайта, без завершающего слеша. Для локального сервера используется `http://localhost:5173`; локальные callback требуют отдельной регистрации у провайдера и могут быть отклонены его настройками безопасности.
 
@@ -74,8 +74,6 @@ https://newcube-moderation-journal.1pirs.workers.dev/auth/vk/callback
 - CSRF-защита выхода и изменений прав, ограничение попыток, серверный контроль доступа.
 - Учётные записи, сессии, должности и события авторизации в D1.
 - Закрытый HTML журнала и `/app.js`, выдаваемые только активному сотруднику.
-
-Подключение журналов Minecraft и перенос рабочих записей на сервер — отдельный следующий этап. Текущие записи интерфейса всё ещё демонстрационные; авторизация и управление доступом уже серверные.
 
 ## Discord-бот
 

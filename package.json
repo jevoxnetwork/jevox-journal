@@ -1,5 +1,5 @@
 {
-  "name": "moderation-journal",
+  "name": "jevox-journal",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
+    "build:pages": "node scripts/build.mjs --pages",
     "db:generate": "drizzle-kit generate",
     "deploy": "wrangler deploy --config wrangler.jsonc --keep-vars",
     "test": "node --test test/*.test.mjs",

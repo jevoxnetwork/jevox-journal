@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -35,3 +35,10 @@ await build({
 const manifest = await readFile(path.join(root,'.openai/hosting.json'));
 await writeFile(path.join(root,'dist/.openai/hosting.json'),manifest);
 console.log(`Built Cloudflare Worker with ${Object.keys(assets).length} bundled assets and D1 binding.`);
+
+if (process.argv.includes('--pages')) {
+  const config = JSON.parse(await readFile(path.join(root, 'wrangler.pages.jsonc'), 'utf8'));
+  const output = path.join(root, config.pages_build_output_dir);
+  await mkdir(output, { recursive: true });
+  await copyFile(path.join(root, 'dist/server/index.js'), path.join(output, '_worker.js'));
+}
