@@ -77,6 +77,12 @@ export class Store {
     ]);
   }
   async moderator(id) { return this.db.prepare('SELECT * FROM moderators WHERE id=?').bind(id).first(); }
+  positionDiscordActor(actor,id) {
+    return this.db.prepare(`UPDATE discord_role_jobs SET changed_by=?
+      WHERE discord_id=(SELECT discord_id FROM moderators WHERE id=?)
+        AND reason='Должность изменена в журнале' AND changes()>0`)
+      .bind(actor.journal_nickname||actor.display_name,id);
+  }
   async editModerator(actor,id,m) {
     const old=await this.moderator(id); if(!old) return 'missing';
     if(!canEditMember(actor.journal_position,old.position))return 'rank';
@@ -89,6 +95,7 @@ export class Store {
       statements.push(this.db.prepare("UPDATE auth_users SET status=CASE WHEN status='active' THEN 'pending' ELSE status END WHERE provider=? AND provider_id=?").bind(provider,providerId));
     }
     statements.push(this.db.prepare('UPDATE moderators SET nickname=?,position=?,real_name=?,birth_date=?,vk_id=?,telegram_id=?,appointment_date=?,staff_since=?,discord_id=? WHERE id=?').bind(m.nickname,m.position,m.realName,m.birthDate,m.vkId||null,m.telegramId||null,m.appointmentDate===undefined?(m.position===old.position?old.appointment_date:new Date().toISOString().slice(0,10)):(m.appointmentDate||null),m.staffSince===undefined?old.staff_since:(m.staffSince||null),m.discordId===undefined?old.discord_id:(m.discordId||null),id));
+    if(old.position!==m.position)statements.push(this.positionDiscordActor(actor,id));
     statements.push(this.db.prepare("UPDATE auth_users SET status=CASE WHEN status='pending' THEN 'active' ELSE status END WHERE (provider='vk' AND provider_id=?) OR (provider='telegram' AND provider_id=?)").bind(m.vkId||null,m.telegramId||null));
     if(old.position!==m.position) statements.push(this.db.prepare('INSERT INTO journal_notifications (id,moderator_id,message,created_at) VALUES (?,?,?,?)').bind(crypto.randomUUID(),id,`Должность изменена: ${old.position} → ${m.position}. Изменил: ${actor.journal_nickname||actor.display_name}.`,now()));
     statements.push(this.db.prepare('INSERT INTO auth_audit (id,actor_id,action,target_id,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(),actor.id,'moderator_edited',id,now()));
@@ -105,7 +112,8 @@ export class Store {
       this.db.prepare(`INSERT INTO journal_notifications (id,moderator_id,message,created_at)
         SELECT ?,?,?,? WHERE changes()>0`).bind(crypto.randomUUID(),id,`Должность изменена: ${member.position} → ${position}. Изменил: ${actor.journal_nickname||actor.display_name}.`,at),
       this.db.prepare(`INSERT INTO auth_audit (id,actor_id,action,target_id,created_at)
-        SELECT ?,?,'moderator_edited',?,? WHERE changes()>0`).bind(crypto.randomUUID(),actor.id,id,at)
+        SELECT ?,?,'moderator_edited',?,? WHERE changes()>0`).bind(crypto.randomUUID(),actor.id,id,at),
+      this.positionDiscordActor(actor,id),
     ]);
     return (result.meta?.changes??result.changes)>0?'ok':'conflict';
   }

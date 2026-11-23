@@ -563,6 +563,10 @@
 .staff-profile-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .staff-control-form { display: grid; gap: 12px; margin-top: 16px; }
 .staff-control-form label { font-size: 13px; color: var(--theme-muted); }
+.staff-control-form :is(.staff-period,.staff-range label) { display: grid; gap: 8px; }
+.staff-control-form .staff-period .input { width: min(100%, 270px); margin: 0; }
+.staff-control-form .staff-range { margin-top: 4px; }
+.staff-control-form .staff-range input { margin: 0; }
 .staff-control-form .detail-actions { justify-content: center; }
 .notification-scroll {
   --notification-thumb: color-mix(in srgb, var(--theme-accent) 56%, var(--theme-raised));
@@ -976,6 +980,15 @@
 .checks-card dl { display: grid; grid-template-columns: repeat(auto-fit,minmax(108px,1fr)); gap: 10px; padding: 11px; margin: 14px 0 0; border-radius: 10px; background: var(--theme-raised); }
 .checks-card dd { margin: 4px 0 0; font-size: 12px; }
 .checks-empty { margin-top: 14px; padding: 26px 12px; text-align: center; color: var(--theme-muted); }
+.checks-card-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.checks-card-actions .button { min-height: 32px; padding: 5px 11px; font-size: 12px; }
+#checks-results { transition: opacity .18s ease; }
+#checks-results[aria-busy="true"] { opacity: .55; }
+@media (prefers-reduced-motion: no-preference) {
+  .checks-cards { animation: checks-appear .26s ease-out both; }
+  @keyframes checks-appear { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+}
+@media (prefers-reduced-motion: reduce) { #checks-results { transition: none; } }
 .checks-pages { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
 @media(max-width: 970px) {
   .checks-filters,.checks-filters[data-staff="true"] { grid-template-columns: repeat(3,minmax(0,1fr)); }

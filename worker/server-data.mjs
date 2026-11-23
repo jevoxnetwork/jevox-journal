@@ -1,4 +1,4 @@
-import { canEditRoster } from './staff-positions.mjs';
+import { canViewStaffChecks } from './staff-positions.mjs';
 import { equal, json, now } from './security.mjs';
 const fields=['id','player','player_uuid','moderator','moderator_uuid','reason','started','ended','result','type','active','removed_by'];
 const moscowOffset=3*60*60*1000;
@@ -14,7 +14,9 @@ export async function serverData(request,env,session,url) {
   for(const row of data.records){
    if(!row||fields.some(k=>row[k]!==undefined&&(typeof row[k]!=='string'&&typeof row[k]!=='number'))||typeof row.id!=='string'||row.id.length>150||typeof row.player!=='string'||row.player.length>100||typeof row.moderator!=='string'||row.moderator.length>100||typeof row.reason!=='string'||row.reason.length>5000||!Number.isSafeInteger(row.started)||row.started<0||!Number.isSafeInteger(row.ended)||row.ended<0)return json({error:'Invalid record'},400);
    const values=fields.map(k=>row[k]??(['started','ended','active'].includes(k)?0:''));
-   queries.push(db.prepare(`INSERT INTO server_${data.kind} (${fields.join(',')}) SELECT ${fields.map(()=>'?').join(',')} WHERE ?>COALESCE((SELECT cutoff FROM server_retention WHERE kind=?),-1) ON CONFLICT(id) DO UPDATE SET ${fields.slice(1).map(k=>k+'=excluded.'+k).join(',')}${data.kind==='checks'?' WHERE excluded.ended>=server_checks.ended':''}`).bind(...values,row.started,data.kind));
+   const deleted=data.kind==='checks'?' AND NOT EXISTS (SELECT 1 FROM deleted_server_checks WHERE id=?)':'';
+   const guard=data.kind==='checks'?[row.id]:[];
+   queries.push(db.prepare(`INSERT INTO server_${data.kind} (${fields.join(',')}) SELECT ${fields.map(()=>'?').join(',')} WHERE ?>COALESCE((SELECT cutoff FROM server_retention WHERE kind=?),-1)${deleted} ON CONFLICT(id) DO UPDATE SET ${fields.slice(1).map(k=>k+'=excluded.'+k).join(',')}${data.kind==='checks'?' WHERE excluded.ended>=server_checks.ended':''}`).bind(...values,row.started,data.kind,...guard));
   }
   queries.push(db.prepare('INSERT INTO server_sync (kind,updated_at) VALUES (?,?) ON CONFLICT(kind) DO UPDATE SET updated_at=excluded.updated_at').bind(data.kind,now()));
   await db.batch(queries);return json({ok:true,count:data.records.length});
@@ -26,7 +28,7 @@ export async function serverData(request,env,session,url) {
  const sync=(await db.prepare('SELECT * FROM server_sync').all()).results;
  const staffChecks=path==='/api/server/staff-checks';
  const kind=staffChecks||path.endsWith('/checks')?'checks':'punishments',params=url.searchParams;
- if(staffChecks&&!canEditRoster(session.journal_position))return json({error:'Нет доступа.'},403);
+ if(staffChecks&&!canViewStaffChecks(session.journal_position))return json({error:'Нет доступа.'},403);
  const filters=[],args=[];
  const player=(params.get('player')||'').trim();
  if(kind==='checks'){
@@ -62,6 +64,18 @@ export async function serverData(request,env,session,url) {
  const columns=kind==='checks'?`${fields.filter(field=>field!=='reason').join(',')}, (SELECT p.reason FROM server_punishments p WHERE p.type='ban' AND server_checks.player_uuid<>'' AND p.player_uuid=server_checks.player_uuid AND p.started>=server_checks.started AND p.started<=CASE WHEN server_checks.ended=0 THEN 9223372036854775807 ELSE server_checks.ended+5000 END ORDER BY p.started LIMIT 1) AS ban_reason`:'*';
  const items=(await db.prepare(`SELECT ${columns} FROM server_${kind}`+where+' ORDER BY started DESC,id DESC LIMIT 30 OFFSET ?').bind(...args,(page-1)*30).all()).results;
  return json({items,total,page,pages:Math.ceil(total/30),sync});
+}
+
+export async function deleteServerCheck(db,session,id) {
+ const [removed]=await db.batch([
+  db.prepare(`INSERT INTO deleted_server_checks (id,deleted_at)
+    SELECT id,? FROM server_checks WHERE id=? ON CONFLICT(id) DO NOTHING`).bind(now(),id),
+  db.prepare(`INSERT INTO auth_audit (id,actor_id,action,target_id,created_at)
+    SELECT ?,?,'server_check_deleted',player,? FROM server_checks WHERE id=? AND changes()>0`)
+    .bind(crypto.randomUUID(),session.id,now(),id),
+  db.prepare('DELETE FROM server_checks WHERE id=?').bind(id),
+ ]);
+ return (removed.meta?.changes??removed.changes)>0;
 }
 
 async function staffLeaderboard(db,monthly) {

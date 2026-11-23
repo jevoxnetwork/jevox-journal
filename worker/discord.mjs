@@ -26,6 +26,7 @@ async function reconcile(env,job) {
   const wanted=account?discordRoles[account.position]:null;
   if(account&&!wanted)throw Error('Unknown Discord staff position');
   const token=env.DISCORD_BOT_TOKEN;
+  const actor=job.changed_by?'\nИзменил: **'+String(job.changed_by).replace(/[\\*_~`|]/g,'\\$&')+'**':'';
   const member='/guilds/'+discordGuild+'/members/'+job.discord_id;
   const response=await discordRequest(token,member);
   if(response.status===404){
@@ -54,12 +55,12 @@ async function reconcile(env,job) {
   for(const role of removed){
     const result=await discordRequest(token,member+'/roles/'+role,'DELETE');
     if(!result.ok)throw Error('Discord role removal '+result.status);
-    await logDiscord(token,'Роль снята',`**${job.nickname}** • <@${job.discord_id}>\nСнята роль <@&${role}>.\n${job.reason}.`,0xc87464);
+    await logDiscord(token,'Роль снята',`**${job.nickname}** • <@${job.discord_id}>\nСнята роль <@&${role}>.\n${job.reason}.${actor}`,0xc87464);
   }
   if(added){
     const result=await discordRequest(token,member+'/roles/'+added,'PUT');
     if(!result.ok)throw Error('Discord role assignment '+result.status);
-    await logDiscord(token,'Роль выдана',`**${account.nickname}** • <@${job.discord_id}>\nВыдана роль <@&${added}>.\n${job.reason}.`,0x93b779);
+    await logDiscord(token,'Роль выдана',`**${account.nickname}** • <@${job.discord_id}>\nВыдана роль <@&${added}>.\n${job.reason}.${actor}`,0x93b779);
   }
   if(rename){
     const result=await discordRequest(token,member,'PATCH',{nick:nextNickname});
@@ -68,7 +69,7 @@ async function reconcile(env,job) {
       return 'blocked';
     }
     if(!result.ok)throw Error('Discord nickname '+result.status);
-    await logDiscord(token,resetNickname?'Ник сброшен':'Ник синхронизирован',`<@${job.discord_id}> • **${job.nickname}**\n${job.reason}.`,0x93b779);
+    await logDiscord(token,resetNickname?'Ник сброшен':'Ник синхронизирован',`<@${job.discord_id}> • **${job.nickname}**\n${job.reason}.${actor}`,0x93b779);
   }
   return 'updated';
 }
@@ -76,11 +77,10 @@ async function reconcile(env,job) {
 export async function syncDiscordJoin(env,member) {
   const id=member?.user?.id;
   if(member?.guild_id!==discordGuild||!discordIdValid(id))return;
-  const job=await env.DB.prepare(`INSERT INTO discord_role_jobs (discord_id,nickname,reason)
+  await env.DB.prepare(`INSERT INTO discord_role_jobs (discord_id,nickname,reason)
     SELECT discord_id,nickname,'Вступление на сервер Discord' FROM moderators WHERE discord_id=?
-    ON CONFLICT(discord_id) DO UPDATE SET nickname=excluded.nickname,reason=excluded.reason,revision=excluded.revision
-    RETURNING discord_id`).bind(id).first();
-  if(job)await drainDiscordJobs(env,1,{memberId:id});
+    ON CONFLICT(discord_id) DO NOTHING`).bind(id).run();
+  await drainDiscordJobs(env,1,{memberId:id});
 }
 
 export async function drainDiscordJobs(env,limit=6,{memberId=null,newest=false}={}) {
@@ -92,7 +92,7 @@ export async function drainDiscordJobs(env,limit=6,{memberId=null,newest=false}=
     const job=await db.prepare(`UPDATE discord_role_jobs SET leased_until=unixepoch()+90
       WHERE discord_id=(SELECT discord_id FROM discord_role_jobs WHERE leased_until<=unixepoch()
         AND (? IS NULL OR discord_id=?) ORDER BY ${order} LIMIT 1)
-      RETURNING discord_id,nickname,reason,previous_position,revision`).bind(memberId,memberId).first();
+      RETURNING discord_id,nickname,reason,previous_position,revision,changed_by`).bind(memberId,memberId).first();
     if(!job)break;
     try{
       const status=await reconcile(env,job);

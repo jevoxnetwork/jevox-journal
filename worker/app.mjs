@@ -1,8 +1,8 @@
-import { staffPositions, canAssignPosition, canDeleteFormerRecord, canEditRoster, canManageManuals, canViewStaff, hasStaffRank } from './staff-positions.mjs';
+import { staffPositions, canAssignPosition, canDeleteFormerRecord, canDeleteStaffChecks, canEditRoster, canManageManuals, canViewStaff, hasStaffRank } from './staff-positions.mjs';
 import { canUseBanner, isProfileBanner } from './profile-banners.mjs';
 import { discordIdValid, discordInteraction, drainDiscordJobs, logStaffRemoval } from './discord.mjs';
 import { actionLogs, canReadActionLogs } from './action-logs.mjs';
-import { serverData, staffActivity } from './server-data.mjs';
+import { deleteServerCheck, serverData, staffActivity } from './server-data.mjs';
 import { minecraftSkin, minecraftTexture } from './minecraft-skins.mjs';
 import { checkBridge } from './check-bridge.mjs';
 import { Store } from './store.mjs';
@@ -99,6 +99,15 @@ export function createHandler(assetMap, dependencies = {}) {
       return new Response(null, { status: result.status, headers: result.headers });
     }
     if(['/api/server/sync','/api/server/checks','/api/server/staff-checks','/api/server/summary','/api/server/leaderboard'].includes(path))return serverData(request,env,path.endsWith('/sync')?null:await getSession(),url);
+    if(path==='/api/server/staff-checks/delete'&&request.method==='POST'){
+      const session=await getSession();
+      if(session?.status!=='active'||!canDeleteStaffChecks(session.journal_position)||!csrfOk(request,config,session))
+        return json({error:'Нет доступа.'},403);
+      let data;
+      try{data=await readBody(request)}catch{return json({error:'Некорректный запрос.'},400)}
+      if(typeof data?.id!=='string'||!data.id||data.id.length>150)return json({error:'Некорректная проверка.'},400);
+      return await deleteServerCheck(env.DB,session,data.id)?json({ok:true}):json({error:'Проверка уже удалена или не найдена.'},404);
+    }
     if(path==='/api/check-bridge')return checkBridge(request,env);
     const skinMatch=path.match(/^\/api\/minecraft-skin\/([A-Za-z0-9_]{1,16})$/);
     if(skinMatch&&request.method==='GET'){

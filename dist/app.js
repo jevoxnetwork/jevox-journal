@@ -1,4 +1,4 @@
-import { staffPositions as positions, canViewStaff, canEditRoster, canEditMember, canAssignPosition, canDeleteFormerRecord, canDiscipline, canManageManuals, isSanctionImmune } from '../worker/staff-positions.mjs';
+import { staffPositions as positions, canViewStaff, canViewStaffChecks, canDeleteStaffChecks, canEditRoster, canEditMember, canAssignPosition, canDeleteFormerRecord, canDiscipline, canManageManuals, isSanctionImmune } from '../worker/staff-positions.mjs';
 import { profileBanners, canUseBanner } from '../worker/profile-banners.mjs';
 import { manualMarkupPrefix, readFormattedManual, saveFormattedManual, manualLink } from './manual-content.mjs';
 import { createCursorWeb } from './cursor-web.mjs';
@@ -19,16 +19,19 @@ paths.archive='<rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v12h
 const icon=n=>`<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n]||paths.book}</svg>`;
 const pages={settings:['Настройки','settings'],profile:['Личный профиль','users'],overview:['Ваш журнал','book'],logs:['Логи действий','book'],team:['Команда проекта','users'],management:['Управление составом','shield'],former:['Бывший состав','users'],stats:['Статистика','trend'],manuals:['Мануалы','book'],top:['Топ состава','trend']};
 const myPosition=account.user.position;
-pages.checks=['Проверки','scan'];
-if(rosterEditor())pages['staff-checks']=['Проверки состава','scan'];
-bindCheckWork();
+pages.checks=['Мои проверки','scan'];
+if(canViewStaffChecks(myPosition))pages['staff-checks']=['Проверки персонала','scan'];
+bindCheckWork({
+  csrf:account.csrf,
+  showDelete:body=>showModal(modalHeader('Удалить проверку?')+body),
+});
 const isOwner=myPosition==='Владелец';
 const canClearStaffWork=canDeleteFormerRecord(myPosition);
 const canReadLogs=canViewStaff(myPosition);
 const mayManageManuals=canManageManuals(myPosition);
 const groups=[
   {label:'Журнал',routes:['overview','team','checks']},
-  {label:'Управление',routes:[...(rosterEditor()?['management','staff-checks','former']:[]),...(canReadLogs?['logs']:[])]},
+  {label:'Управление',routes:[...(rosterEditor()?['management','former']:[]),...(canReadLogs?['logs']:[]),...(canViewStaffChecks(myPosition)?['staff-checks']:[])]},
   {label:'Ресурсы',routes:['manuals']},
   {label:'Активности',routes:['stats','top']},
 ].filter(group=>group.routes.length||group.placeholder);
@@ -729,7 +732,7 @@ async function loadFormerArchive(){
 document.addEventListener('input',event=>{
   if(event.target.id==='former-search')renderFormerList();
 });
-function render(){navigation();let html=route==='settings'?settingsPage():route.startsWith('manuals/')?manualSubpage():(route==='profile'||route.startsWith('profile/'))?profilePage():route==='logs'?actionLogsPage():route==='checks'||route==='staff-checks'?checksPage(route==='staff-checks',icon):route==='top'?leaderboardPage():route==='overview'?overview():route==='team'?team():route==='former'?formerArchive():route==='management'?management():route==='stats'?title('stats','Активность модерации.')+empty('Статистика появится после подключения сервера.'):manualPage();$('#main').innerHTML=`<div class="route-content ${['team','management','former','logs'].includes(route)?'staff-route':''}">${html}</div>`;document.title=(pages[route]?.[0]||(route.startsWith('profile/')?'Профиль сотрудника':'Мануал'))+' — Jevox Journal';if(route.startsWith('manuals/'))loadManualSubpage(route);if(route==='management')loadManagement();if(route==='former')loadFormerArchive();if(route==='logs')loadActionLogs();if(route==='manuals')loadManuals();if(route==='overview')loadServerSummary();if(route==='top')loadLeaderboard();if(route==='checks'||route==='staff-checks')loadChecks();if(route==='profile'||route.startsWith('profile/'))loadPersonalProfile();}
+function render(){navigation();let html=route==='settings'?settingsPage():route.startsWith('manuals/')?manualSubpage():(route==='profile'||route.startsWith('profile/'))?profilePage():route==='logs'?actionLogsPage():route==='checks'||route==='staff-checks'?checksPage(route==='staff-checks',icon,canDeleteStaffChecks(myPosition)):route==='top'?leaderboardPage():route==='overview'?overview():route==='team'?team():route==='former'?formerArchive():route==='management'?management():route==='stats'?title('stats','Активность модерации.')+empty('Статистика появится после подключения сервера.'):manualPage();$('#main').innerHTML=`<div class="route-content ${['team','management','former','logs'].includes(route)?'staff-route':''}">${html}</div>`;document.title=(pages[route]?.[0]||(route.startsWith('profile/')?'Профиль сотрудника':'Мануал'))+' — Jevox Journal';if(route.startsWith('manuals/'))loadManualSubpage(route);if(route==='management')loadManagement();if(route==='former')loadFormerArchive();if(route==='logs')loadActionLogs();if(route==='manuals')loadManuals();if(route==='overview')loadServerSummary();if(route==='top')loadLeaderboard();if(route==='checks'||route==='staff-checks')loadChecks();if(route==='profile'||route.startsWith('profile/'))loadPersonalProfile();}
 async function loadStaff(){try{const r=await fetch('/api/staff',{cache:'no-store'});if(!r.ok)throw Error();staff=(await r.json()).users;const owners=$('#team-owners');if(owners)owners.outerHTML=ownerCards(staff);if(route==='team'){const input=$('#team-search');if(input)searchTeam(input.value);else render()}}catch{toast('Не удалось загрузить состав.') }}
 async function loadManagement(){const box=$('#management-list');if(!box)return;try{const r=await fetch('/api/admin/moderators',{cache:'no-store'});if(!r.ok)throw Error();const payload=await r.json(),result=payload.moderators;if(!box.isConnected)return;moderators=result;box.innerHTML=result.length?`<table class="roster"><thead><tr><th>Ник</th><th>Должность</th><th>ВКонтакте</th><th></th></tr></thead><tbody>${positions.map(position=>{const list=result.filter(m=>m.position===position);return list.length?`<tr class="roster-group"><th colspan="4">${esc(position)} <span>${list.length}</span></th></tr>${list.map(m=>`<tr><td><button class="roster-name" data-moderator-id="${esc(m.id)}">${esc(m.nickname)} <span>↗</span></button></td><td>${esc(m.position)}</td><td>${vkLink(m.vk_id)}</td><td class="roster-actions"><div class="management-actions"><button class="button" data-route="profile/${esc(m.id)}">Профиль</button>${canEditMember(myPosition,m.position)?`<button class="button" data-edit-moderator="${esc(m.id)}">Изменить</button>`:''}${canAssignPosition(myPosition,m.position)?`<button class="button danger-button" data-remove-moderator="${esc(m.id)}">Снять</button>`:''}</div></td></tr>`).join('')}`:''}).join('')}</tbody></table>`:'<div class="roster-empty">Пока никого нет в составе.</div>'}catch{if(box.isConnected)box.textContent='Не удалось загрузить состав.'}}
 function formatDate(date){return date?esc(date.split('-').reverse().join('.')):'Не указана'}
@@ -1186,7 +1189,7 @@ document.addEventListener('click',event=>{
     ${activity?`<p class="form-hint">Укажите итоговые числа за всё время. Новые проверки и наказания будут прибавляться автоматически.</p>
       <label>Проверки<input class="input" name="checks" type="number" min="0" max="2147483647" step="1" value="${esc(checks)}" required></label>
       <label>Наказания<input class="input" name="punishments" type="number" min="0" max="2147483647" step="1" value="${esc(punishments)}" required></label>`:''}
-    ${dated?`<label>Период<select class="input" name="period" data-history-period>
+    ${dated?`<label class="staff-period">Период<select class="input" name="period" data-history-period>
       <option value="today">Сегодня</option><option value="month">За последний месяц</option>
       <option value="quarter">За последние 3 месяца</option><option value="all">За всё время</option>
       <option value="custom">Выбрать даты</option>
@@ -1300,7 +1303,7 @@ function actionLabel(row){
     staff_sanction_issued:row.sanction_type==='warning'?'Выдал предупреждение':'Выдал выговор',
     staff_sanction_revoked:row.sanction_type==='warning'?'Снял предупреждение':'Снял выговор',
     manual_saved:'Сохранил инструкцию',manual_deleted:'Удалил инструкцию',
-    staff_activity_adjusted:'Изменил счётчики сотрудника',staff_logs_cleared:'Очистил логи сотрудника',staff_positions_cleared:'Очистил историю должностей сотрудника',staff_activity_cleared:'Очистил работы сотрудника'
+    staff_activity_adjusted:'Изменил счётчики сотрудника',staff_logs_cleared:'Очистил логи сотрудника',server_check_deleted:'Удалил проверку',staff_positions_cleared:'Очистил историю должностей сотрудника',staff_activity_cleared:'Очистил работы сотрудника'
   };
   if(row.action.startsWith('rollback:'))return 'Откатил действие';
   if(row.action.startsWith('access:'))return 'Изменил доступ к журналу';

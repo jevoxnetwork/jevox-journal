@@ -403,7 +403,7 @@ test('Staff controls separate monthly activity, personal notifications, position
  }finally{await f.close()}
 });
 
-test('Game check events retain history; only managers and above can search staff checks',async()=>{
+test('Only support and above can view staff checks; junior admins can permanently delete an individual check',async()=>{
  const f=setup({position:'Саппорт'});
  try{
   f.env.CHECK_BRIDGE_TOKEN='b'.repeat(64);
@@ -417,7 +417,7 @@ test('Game check events retain history; only managers and above can search staff
   assert.deepEqual(await(await bridge({op:'poll'})).json(),{jobs:[]});
   assert.equal((await f.request('/api/work/checks',{method:'POST',headers,body:'{}'})).status,404);
   assert.equal((await f.request('/api/server/staff-checks')).status,403);
-  assert.equal((await f.request('/api/server/staff-checks',{headers})).status,403);
+  assert.equal((await f.request('/api/server/staff-checks',{headers})).status,200);
   const started=Date.now()-1000, ended=started+500;
   const first={id:'fastfreeze-first',player:'TestPlayer',moderator:'FirstMod',reason:'Жалоба',started,ended:0,result:'На проверке',active:1,type:'check'};
   const second={...first,id:'fastfreeze-second',moderator:'SecondMod',player:'OtherPlayer'};
@@ -436,7 +436,7 @@ test('Game check events retain history; only managers and above can search staff
   assert.equal(personal.items[0].removed_by,'OtherModerator');
   assert.equal((await read('/api/server/summary')).checks,1);
   assert.equal((await read('/api/server/leaderboard?period=month')).staff[0].checks,1);
-  f.DB.raw.exec("UPDATE moderators SET position='Спектатор' WHERE id='actor'");
+  f.DB.raw.exec("UPDATE moderators SET position='Шериф' WHERE id='actor'");
   assert.equal((await f.request('/api/server/staff-checks',{headers})).status,403);
   f.DB.raw.exec("UPDATE moderators SET position='Менеджер' WHERE id='actor'");
   const staffChecks=await read('/api/server/staff-checks');
@@ -446,6 +446,20 @@ test('Game check events retain history; only managers and above can search staff
   assert.equal((await read('/api/server/staff-checks?moderator=SECOND')).items[0].player,'OtherPlayer');
   assert.equal((await read('/api/server/staff-checks?player=TEST')).items[0].moderator,'FirstMod');
   assert.equal((await read('/api/server/staff-checks?player=TEST&moderator=SECOND')).total,0);
+  const del='/api/server/staff-checks/delete';
+  const csrf=(await read('/api/auth/session')).csrf;
+  const remove=(id,token=csrf)=>f.request(del,{method:'POST',headers:{...headers,Origin:f.env.PUBLIC_URL,
+    'X-CSRF-Token':token,'Content-Type':'application/json'},body:JSON.stringify({id})});
+  assert.equal((await remove(first.id)).status,403);
+  f.DB.raw.exec("UPDATE moderators SET position='Младший Администратор' WHERE id='actor'");
+  assert.equal((await remove(first.id,'invalid')).status,403);
+  assert.equal((await remove(first.id)).status,200);
+  assert.equal((await remove(first.id)).status,404);
+  assert.equal((await sync([first])).status,200);
+  assert.equal((await read('/api/server/staff-checks')).total,1);
+  assert.equal((await read('/api/server/checks')).total,0);
+  assert.equal((await read('/api/server/summary')).checks,0);
+  assert.equal(f.DB.raw.prepare("SELECT COUNT(*) AS n FROM auth_audit WHERE action='server_check_deleted'").get().n,1);
  }finally{await f.close();}
 });
 
@@ -762,11 +776,14 @@ test('Discord role sync replaces the previous staff role and preserves unrelated
  try {
   f.env.DISCORD_BOT_TOKEN='fake';
   f.DB.raw.prepare("UPDATE moderators SET discord_id=?,position='Шериф' WHERE id='actor'").run(discordId);
-  f.DB.raw.exec("UPDATE moderators SET position='Саппорт' WHERE id='actor'");
+  const actor={id:'actor-user',journal_position:'Менеджер',journal_nickname:'Lead_Mod'};
+  assert.equal(await new Store(f.DB).changeStaffPosition(actor,'actor','Саппорт'),'ok');
+  assert.equal(f.DB.raw.prepare('SELECT changed_by FROM discord_role_jobs WHERE discord_id=?').get(discordId).changed_by,'Lead_Mod');
   const result=await drainDiscordJobs(f.env);
   assert.equal(result.updated,1);
   assert.deepEqual(roles,[unrelated,discordRoles['Саппорт']]);
   assert.equal(messages.length,2);
+  assert.ok(messages.every(message=>message.embeds[0].description.includes('Изменил: **Lead\\_Mod**')));
   assert.deepEqual(messages[0].allowed_mentions,{parse:[]});
   assert.equal(f.DB.raw.prepare('SELECT COUNT(*) AS count FROM discord_role_jobs').get().count,0);
  }finally{await f.close()}
@@ -986,22 +1003,24 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    assert.equal(calls.filter(x=>x.path==='/channels/'+ticketPanelChannel+'/messages').length,1);
    const panelButtons=panel.components[0].components;
    assert.deepEqual(panelButtons.map(button=>button.custom_id),['jt:topic:support','jt:topic:complaint','jt:topic:other']);
-   assert.ok(panelButtons.every(button=>button.type===2&&button.emoji.id));
-   assert.match(panel.embeds[0].image.url,/discord-ticket-panel[.]jpg$/);
+   assert.ok(panelButtons.every(button=>button.type===2&&button.style===2&&button.emoji.id));
+   assert.match(panel.embeds[0].image.url,/discord-ticket-support-v3[.]jpg$/);
+   assert.ok(panel.embeds.every(embed=>embed.color===0x313338));
    DB.raw.exec('UPDATE discord_ticket_panel SET layout_version=0');
    await publishTicketPanel(env);
    assert.equal(calls.filter(x=>x.path==='/channels/'+ticketPanelChannel+'/messages'&&x.method==='POST').length,1);
    assert.equal(calls.filter(x=>x.path==='/channels/'+ticketPanelChannel+'/messages/'+panelMessage&&x.method==='PATCH').length,1);
    assert.equal(DB.raw.prepare('SELECT message_id FROM discord_ticket_panel WHERE id=1').get().message_id,panelMessage);
    const expected={
-     support:{suffix:'поддержка',icon:'🔴',fields:['nickname','problem'],ping:discordRoles['Саппорт']},
-     complaint:{suffix:'жалобы',icon:'🟢',fields:['nickname','target','report','evidence'],ping:discordRoles['Менеджер']},
-     other:{suffix:'прочее',icon:'🟢',fields:['nickname','question'],ping:discordRoles['Саппорт']},
+     support:{fields:['nickname','problem'],ping:discordRoles['Саппорт']},
+     complaint:{fields:['nickname','target','report','evidence'],ping:discordRoles['Менеджер']},
+     other:{fields:['nickname','question'],ping:discordRoles['Саппорт']},
    };
    let complaint,support;
    for(const [kind,item] of Object.entries(expected)){
      const opened=await send({type:3,data:{custom_id:'jt:topic:'+kind}});
      assert.equal(opened.reply.type,9);
+     assert.ok(opened.reply.data.components.every(c=>/^[А-ЯЁ]/u.test(c.label)));
      assert.deepEqual(opened.reply.data.components.map(c=>c.component.custom_id),item.fields);
      const inputs=item.fields.map(custom_id=>({type:18,component:{custom_id,value:custom_id==='nickname'?'1pirs':'Test @everyone'}}));
      const request={type:5,data:{custom_id:'jt:open:'+kind,components:inputs}};
@@ -1013,7 +1032,7 @@ test('Discord tickets publish one panel, create private channels, allow one staf
      if(kind==='complaint')complaint=ticket;
      if(kind==='support')support=ticket;
      const channel=calls.find(x=>x.body?.topic==='Jevox Support · Ticket '+ticket.id).body;
-     assert.equal(channel.name,item.icon+'・1pirs-'+item.suffix);
+     assert.equal(channel.name,'💥・1pirs');
      assert.equal(channel.parent_id,ticketCategory);
      assert.deepEqual(channel.permission_overwrites[0],{id:discordGuild,type:0,allow:'0',deny:'1024'});
      assert.deepEqual(channel.permission_overwrites.slice(1,-2).map(r=>r.id),
@@ -1021,7 +1040,8 @@ test('Discord tickets publish one panel, create private channels, allow one staf
          [discordRoles['Владелец'],discordRoles['Саппорт'],discordRoles['Менеджер'],discordRoles['Младший Администратор'],discordRoles['Администратор']]);
      assert.equal(channel.permission_overwrites.at(-2).id,author);
      const notice=calls.find(x=>x.path==='/channels/'+ticket.channel_id+'/messages').body;
-     assert.match(notice.embeds[0].image.url,new RegExp('discord-ticket-'+kind+'[.]jpg$'));
+     assert.match(notice.embeds[0].image.url,new RegExp('discord-ticket-'+(kind==='support'?'support-v3':kind)+'[.]jpg$'));
+     assert.ok(notice.embeds.every(embed=>embed.color===0x313338));
      assert.deepEqual(notice.allowed_mentions,{parse:[],users:[author],roles:[item.ping]});
      assert.ok(!JSON.stringify(notice).includes('@everyone'));
      assert.match(calls.at(-1).body.content,new RegExp(ticket.channel_id));
@@ -1044,7 +1064,8 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    const command=(name,ticket,user,role,options=[])=>send({type:2,data:{name,options}},ticket.channel_id,user,[role]);
    await command('priority',complaint,staff,discordRoles['Менеджер'],[{name:'level',value:'medium'}]);
    await settle();
-   assert.ok(calls.some(x=>x.path===channelPath&&x.body?.name==='🟡・1pirs-жалобы'));
+   assert.ok(!calls.some(x=>x.path===channelPath&&x.body?.name));
+   assert.ok(calls.filter(x=>x.path===card).at(-1).body.embeds[1].fields.some(field=>field.name==='Приоритет'&&field.value.includes('Средний')));
    const guest='1573750022762401906';
    await command('add',complaint,staff,discordRoles['Менеджер'],[{name:'user',value:guest}]);
    await settle();

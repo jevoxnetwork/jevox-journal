@@ -10,6 +10,8 @@ export function outranks(position, target) {
   return rank >= 0 && rank < staffPositions.indexOf(target);
 }
 
+export const canViewStaffChecks = position => hasStaffRank(position, 'Саппорт');
+export const canDeleteStaffChecks = position => hasStaffRank(position, 'Младший Администратор');
 export const canViewStaff = position => hasStaffRank(position, 'Спектатор');
 export const canEditRoster = position => hasStaffRank(position, 'Менеджер');
 export const canManageManuals = position => hasStaffRank(position, 'Администратор');

@@ -3,15 +3,16 @@ import {ticketArt} from './discord-ticket-art.mjs';
 import {discordGuild,discordRoles,discordIdValid,discordRequest} from './discord-api.mjs';
 
 export const ticketPanelChannel='1573750022762401943';
-export const ticketCategory='1573749938830188654';
+export const ticketCategory='1574293079656103976';
 const selection='jt:topic';
 const topicButton='jt:topic:';
-const panelVersion=2;
+const panelVersion=3;
+const ticketColor=0x313338;
 const ownerRole=discordRoles['Владелец'];
 const priorities={
-  normal:{label:'Обычный',icon:'🟢',color:0x55bf94},
-  medium:{label:'Средний',icon:'🟡',color:0xf0c85b},
-  urgent:{label:'Срочный',icon:'🔴',color:0xe47372},
+  normal:{label:'Обычный',icon:'🟢'},
+  medium:{label:'Средний',icon:'🟡'},
+  urgent:{label:'Срочный',icon:'🔴'},
 };
 const commandDefinitions=[
   {name:'priority',description:'Изменить приоритет открытого тикета',options:[{type:3,name:'level',description:'Приоритет',required:true,
@@ -21,9 +22,10 @@ const commandDefinitions=[
 ];
 export const isTicketCommand=name=>commandDefinitions.some(command=>command.name===name);
 const timeoutHour=3600;
-const bannerFor=key=>'https://jevox-discord-presence.1pirs.workers.dev/skins/discord-ticket-'+key+'.jpg';
+const artBase='https://jevox-discord-presence.1pirs.workers.dev/skins/';
+const bannerFor=key=>artBase+(['panel','support'].includes(key)?'discord-ticket-support-v3.jpg':'discord-ticket-'+key+'.jpg');
 const hasPriority=key=>typeof key==='string'&&Object.hasOwn(priorities,key);
-const ticketName=ticket=>priorities[ticket.priority].icon+'・'+ticket.nickname.toLowerCase()+'-'+categories[ticket.kind].suffix;
+const ticketName=ticket=>'💥・'+ticket.nickname.toLowerCase();
 const emojiName=key=>'jevox_tk_'+key;
 const ticketEmoji=(icons,key,fallback)=>icons[key]?{id:icons[key],name:emojiName(key)}:{name:fallback};
 const emojiText=(icons,key,fallback)=>icons[key]?`<:${emojiName(key)}:${icons[key]}>`:fallback;
@@ -35,15 +37,15 @@ const supportRole=discordRoles['Саппорт'];
 const managerRole=discordRoles['Менеджер'];
 const leaders=[managerRole,discordRoles['Младший Администратор'],discordRoles['Администратор']];
 const generalStaff=[supportRole,...leaders];
-const nicknameField={id:'nickname',label:'🎮 Ваш никнейм',min:3,max:16,style:1};
+const nicknameField={id:'nickname',label:'Ваш никнейм',min:3,max:16,style:1};
 const details=(id,label,placeholder)=>({id,label,placeholder,min:3,max:900,style:2});
 const categories={
-  support:{label:'Техническая поддержка',description:'Вопросы по серверу или технические ошибки и баги',icon:'🛠️',buttonStyle:1,defaultPriority:'urgent',suffix:'поддержка',roles:generalStaff,ping:supportRole,
-    fields:[nicknameField,details('problem','🛠 Что случилось?','Опишите проблему и когда она появилась')]},
-  complaint:{label:'Жалобы',description:'Жалоба на игрока или участника команды проекта',icon:'⚖️',buttonStyle:2,defaultPriority:'normal',suffix:'жалобы',roles:leaders,ping:managerRole,
-    fields:[nicknameField,{id:'target',label:'👤 Никнейм нарушителя',min:3,max:32,style:1},details('report','📝 Суть жалобы','Расскажите, что произошло'),details('evidence','📎 Доказательства','Вставьте ссылки на скриншоты или видео')]},
-  other:{label:'Прочее',description:'Прочие вопросы и жалобы',icon:'💬',buttonStyle:2,defaultPriority:'normal',suffix:'прочее',roles:generalStaff,ping:supportRole,
-    fields:[nicknameField,details('question','💬 Чем можем вам помочь?','Опишите ваш вопрос')]},
+  support:{label:'Техническая поддержка',icon:'🛠️',defaultPriority:'urgent',roles:generalStaff,ping:supportRole,
+    fields:[nicknameField,details('problem','Что случилось?','Опишите проблему и когда она появилась')]},
+  complaint:{label:'Жалобы',icon:'⚖️',defaultPriority:'normal',roles:leaders,ping:managerRole,
+    fields:[nicknameField,{id:'target',label:'Никнейм нарушителя',min:3,max:32,style:1},details('report','Суть жалобы','Расскажите, что произошло'),details('evidence','Доказательства','Вставьте ссылки на скриншоты или видео')]},
+  other:{label:'Прочее',icon:'💬',defaultPriority:'normal',roles:generalStaff,ping:supportRole,
+    fields:[nicknameField,details('question','Чем можем вам помочь?','Опишите ваш вопрос')]},
 };
 
 const known=key=>typeof key==='string'&&Object.hasOwn(categories,key);
@@ -68,12 +70,10 @@ function panelPayload(icons){
   const options=Object.entries(categories);
   return {
     allowed_mentions:noMentions,
-    embeds:[{color:0xa68bf4,image:{url:bannerFor('panel')}},{title:emojiText(icons,'panel','🎫')+' Помощь игрокам',color:0xa68bf4,
-      description:'Нужна помощь на Jevox Network? Нажмите на подходящую кнопку и заполните форму. Бот откроет приватный канал, где команда ответит на ваше обращение.',
-      fields:options.map(([key,option])=>({name:`${emojiText(icons,key,option.icon)} ${option.label}`,value:option.description})),
-      footer:{text:'Jevox Network · Центр поддержки'}}],
+    embeds:[{color:ticketColor,image:{url:bannerFor('panel')}},{title:'Поддержка Jevox Network',color:ticketColor,
+      description:'Выберите тему обращения и заполните форму. Бот откроет приватный канал, где команда ответит вам.\n\nДля технической проблемы укажите, когда она появилась и как её повторить. К жалобе приложите скриншоты или видео.'}],
     components:[{type:1,components:options.map(([key,option])=>({
-      type:2,style:option.buttonStyle,custom_id:topicButton+key,label:option.label,emoji:ticketEmoji(icons,key,option.icon),
+      type:2,style:2,custom_id:topicButton+key,label:option.label,emoji:ticketEmoji(icons,key,option.icon),
     }))}],
   };
 }
@@ -129,7 +129,7 @@ export async function publishTicketPanel(env){
 
 function modal(key){
   const category=categories[key];
-  return json({type:9,data:{custom_id:'jt:open:'+key,title:`${category.icon} ${category.label}`,components:category.fields.map(field=>({
+  return json({type:9,data:{custom_id:'jt:open:'+key,title:category.label,components:category.fields.map(field=>({
     type:18,label:field.label,component:{type:4,custom_id:field.id,style:field.style,min_length:field.min,max_length:field.max,
       required:true,...(field.placeholder?{placeholder:field.placeholder}:{})},
   }))}});
@@ -163,20 +163,20 @@ function ticketMessage(ticket,icons,initial=false){
   const answers=JSON.parse(ticket.answers);
   const closed=!!ticket.closed_at;
   const priority=priorities[ticket.priority];
-  const color=closed?0x818695:priority.color;
-  const state=closed?`${emojiText(icons,'close','🔒')} Закрыл <@${ticket.closed_by}>`:ticket.assignee_id?`${emojiText(icons,'claim','✅')} Принял <@${ticket.assignee_id}>`:'⏳ Ожидает сотрудника';
+  const color=ticketColor;
+  const state=closed?`Закрыл <@${ticket.closed_by}>`:ticket.assignee_id?`Принял <@${ticket.assignee_id}>`:'Ожидает сотрудника';
   const safe=value=>value.replace(/@/g,'@\u200b');
   const fields=[
-    {name:'👤 Автор',value:`<@${ticket.author_id}>`,inline:true},
-    {name:'🎮 Никнейм',value:safe(ticket.nickname),inline:true},
-    {name:'📌 Статус',value:state,inline:true},
-    {name:'🚦 Приоритет',value:priority.icon+' '+priority.label,inline:true},
+    {name:'Автор',value:`<@${ticket.author_id}>`,inline:true},
+    {name:'Никнейм',value:safe(ticket.nickname),inline:true},
+    {name:'Статус',value:state,inline:true},
+    {name:'Приоритет',value:priority.icon+' '+priority.label,inline:true},
     ...category.fields.filter(field=>field.id!=='nickname').map(field=>({name:field.label,value:safe(answers[field.id])})),
   ];
   return {
     ...(initial?{content:`<@${ticket.author_id}> <@&${category.ping}>`,nonce:'jt-'+ticket.id,enforce_nonce:true}:{}),
     allowed_mentions:initial?{parse:[],users:[ticket.author_id],roles:[category.ping]}:noMentions,
-    embeds:[{color,image:{url:bannerFor(ticket.kind)}},{title:`${emojiText(icons,ticket.kind,category.icon)} ${category.label}`,color,
+    embeds:[{color,image:{url:bannerFor(ticket.kind)}},{title:category.label,color,
       description:closed?(ticket.delete_after?`Канал удалится <t:${ticket.delete_after}:R>.`:'Переписка доступна для чтения.'):'Если нужно, добавьте детали или скриншоты прямо в этом канале.',fields,
       footer:{text:'Jevox Network · Поддержка'},timestamp:new Date(ticket.created_at*1000).toISOString()}],
     components:[{type:1,components:[
@@ -288,7 +288,6 @@ async function syncTicket(env,id=null){
       await discordData(token,channel+'/messages/'+ticket.message_id,'PATCH',ticketMessage(ticket,icons));
     }
     await announceTransitions(env,ticket,icons,channel);
-    if(!created&&ticket.synced_priority!==ticket.priority)await discordData(token,channel,'PATCH',{name:ticketName(ticket)});
     await db.prepare('UPDATE discord_tickets SET synced_revision=?,synced_priority=?,leased_until=0 WHERE id=? AND attempts=?')
       .bind(ticket.revision,ticket.priority,ticket.id,ticket.attempts).run();
     return {channel:ticket.channel_id};

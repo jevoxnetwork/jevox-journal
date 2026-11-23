@@ -6,12 +6,12 @@ import {refreshDiscordRoster} from './discord-roster.mjs';
 import rosterBanner from '../dist/assets/skins/discord-roster-banner.png';
 import {publishTicketPanel,setupTicketCommands,drainTickets} from './discord-tickets.mjs';
 
-import ticketPanelArt from '../dist/assets/skins/discord-ticket-panel.jpg';
+import ticketPanelArt from '../dist/assets/skins/discord-ticket-support-v3.jpg';
 import ticketSupportArt from '../dist/assets/skins/discord-ticket-support.jpg';
 import ticketComplaintArt from '../dist/assets/skins/discord-ticket-complaint.jpg';
 import ticketOtherArt from '../dist/assets/skins/discord-ticket-other.jpg';
 const ticketImages=new Map([
-  ['/skins/discord-ticket-panel.jpg',ticketPanelArt],['/skins/discord-ticket-support.jpg',ticketSupportArt],
+  ['/skins/discord-ticket-support-v3.jpg',ticketPanelArt],['/skins/discord-ticket-support.jpg',ticketSupportArt],
   ['/skins/discord-ticket-complaint.jpg',ticketComplaintArt],['/skins/discord-ticket-other.jpg',ticketOtherArt],
 ]);
 
