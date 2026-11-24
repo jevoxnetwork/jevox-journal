@@ -17,8 +17,7 @@ const commandDefinitions=[
 ];
 export const isTicketCommand=name=>commandDefinitions.some(command=>command.name===name);
 const timeoutHour=3600;
-const artBase='https://jevox-discord-presence.1pirs.workers.dev/skins/';
-const bannerFor=key=>artBase+(['panel','support'].includes(key)?'discord-ticket-support-v3.jpg':'discord-ticket-'+key+'.jpg');
+const supportBanner='https://jevox-discord-presence.1pirs.workers.dev/skins/discord-ticket-support-v3.jpg';
 const ticketName=ticket=>'💥・'+ticket.nickname.toLowerCase();
 const emojiName=key=>'jevox_tk_'+key;
 const ticketEmoji=(icons,key,fallback)=>icons[key]?{id:icons[key],name:emojiName(key)}:{name:fallback};
@@ -64,7 +63,7 @@ function panelPayload(icons){
   const options=Object.entries(categories);
   return {
     allowed_mentions:noMentions,
-    embeds:[{color:ticketColor,image:{url:bannerFor('panel')}},{title:'Поддержка Jevox Network',color:ticketColor,
+    embeds:[{color:ticketColor,image:{url:supportBanner}},{title:'Поддержка Jevox Network',color:ticketColor,
       description:'Выберите тему обращения и заполните форму. Бот откроет приватный канал, где команда ответит вам.\n\nДля технической проблемы укажите, когда она появилась и как её повторить. К жалобе приложите скриншоты или видео.'}],
     components:[{type:1,components:options.map(([key,option])=>({
       type:2,style:2,custom_id:topicButton+key,label:option.label,emoji:ticketEmoji(icons,key,option.icon),
@@ -168,7 +167,7 @@ function ticketMessage(ticket,icons,initial=false){
   return {
     ...(initial?{content:`<@${ticket.author_id}> ${category.pings.map(id=>`<@&${id}>`).join(' ')}`,nonce:'jt-'+ticket.id,enforce_nonce:true}:{}),
     allowed_mentions:initial?{parse:[],users:[ticket.author_id],roles:category.pings}:noMentions,
-    embeds:[{color,image:{url:bannerFor(ticket.kind)}},{title:category.label,color,
+    embeds:[{color,image:{url:supportBanner}},{title:category.label,color,
       description:closed?(ticket.delete_after?`Канал удалится <t:${ticket.delete_after}:R>.`:'Переписка доступна для чтения.'):'Если нужно, добавьте детали или скриншоты прямо в этом канале.',fields,
       footer:{text:'Jevox Network · Поддержка'},timestamp:new Date(ticket.created_at*1000).toISOString()}],
     components:[{type:1,components:[

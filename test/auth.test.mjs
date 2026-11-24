@@ -1051,7 +1051,7 @@ test('Discord tickets publish one panel, create private channels, allow one staf
          [discordRoles['Владелец'],discordRoles['Саппорт'],discordRoles['Менеджер'],discordRoles['Младший Администратор'],discordRoles['Администратор']]);
      assert.equal(channel.permission_overwrites.at(-2).id,author);
      const notice=calls.find(x=>x.path==='/channels/'+ticket.channel_id+'/messages').body;
-     assert.match(notice.embeds[0].image.url,new RegExp('discord-ticket-'+(kind==='support'?'support-v3':kind)+'[.]jpg$'));
+     assert.equal(notice.embeds[0].image.url,panel.embeds[0].image.url);
      assert.ok(notice.embeds.every(embed=>embed.color===0x313338));
      assert.deepEqual(notice.allowed_mentions,{parse:[],users:[author],roles:item.pings});
      assert.ok(item.pings.every(role=>notice.content.includes('<@&'+role+'>')));
