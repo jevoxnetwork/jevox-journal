@@ -251,7 +251,7 @@ async function syncTicket(env,id=null){
   const ticket=await db.prepare(`UPDATE discord_tickets SET leased_until=unixepoch()+60,attempts=attempts+1
     WHERE id=(SELECT id FROM discord_tickets WHERE deleted_at IS NULL AND synced_revision<revision AND leased_until<=unixepoch()
     AND (delete_after IS NULL OR delete_after>unixepoch())
-    AND (? IS NULL OR id=?) ORDER BY created_at,id LIMIT 1) RETURNING *`).bind(id,id).first();
+    AND (? IS NULL OR id=?) ORDER BY (closed_at IS NOT NULL AND delete_after IS NULL),created_at,id LIMIT 1) RETURNING *`).bind(id,id).first();
   if(!ticket)return null;
   try{
     const guildChannels='/guilds/'+discordGuild+'/channels';
