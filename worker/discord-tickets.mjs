@@ -6,7 +6,7 @@ export const ticketPanelChannel='1573750022762401943';
 export const ticketCategory='1574293079656103976';
 const selection='jt:topic';
 const topicButton='jt:topic:';
-const panelVersion=3;
+const panelVersion=4;
 const ticketColor=0x313338;
 const ownerRole=discordRoles['Владелец'];
 const commandVersion=2;
@@ -114,6 +114,7 @@ export async function publishTicketPanel(env){
     if(!Object.keys(categories).every(key=>buttons?.some(button=>button.type===2&&button.custom_id===topicButton+key)))
       throw Error('Discord did not return the ticket buttons');
     await db.prepare('UPDATE discord_ticket_panel SET message_id=?,layout_version=?,last_error=NULL,lease_until=0 WHERE id=1 AND attempts=?').bind(message.id,panelVersion,row.attempts).run();
+    return true;
   }catch(error){
     await db.prepare('UPDATE discord_ticket_panel SET last_error=?,lease_until=unixepoch()+60 WHERE id=1 AND attempts=?')
       .bind(error.message,row.attempts).run();

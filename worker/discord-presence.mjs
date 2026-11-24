@@ -17,7 +17,7 @@ const ticketImages=new Map([
 
 async function prepareTickets(env){
   await setupTicketCommands(env);
-  await publishTicketPanel(env);
+  if(await publishTicketPanel(env))await drainTickets(env);
 }
 
 const gateway='https://gateway.discord.gg/?v=10&encoding=json';
