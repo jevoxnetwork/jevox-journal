@@ -963,13 +963,20 @@ test('Discord tickets publish one panel, create private channels, allow one staf
  const pending=[],calls=[];
  const bot='1572567705624518726',author='1573750022762401900',staff='1573750022762401901';
  const secondStaff='1573750022762401902',panelMessage='1573750022762401903';
+ const oldPriority='1573750022762401904',oldSync='1573750022762401905';
+ const commandPath=`/applications/${bot}/guilds/${discordGuild}/commands`;
  let next=1573750022762402000n;
  const nextId=()=>String(next++);
  t.mock.method(globalThis,'fetch',async(url,request)=>{
    const path=new URL(url).pathname.replace('/api/v10',''),body=request.body?JSON.parse(request.body):null;
    calls.push({path,method:request.method,body});
    if(path==='/applications/@me')return Response.json({id:bot});
-   if(path===`/applications/${bot}/guilds/${discordGuild}/commands`)return Response.json({id:nextId(),name:body.name});
+   if(path===commandPath){
+     return Response.json(request.method==='GET'
+       ?[{id:oldPriority,name:'priority',type:1},{id:oldSync,name:'sync',type:1}]
+       :{id:nextId(),name:body.name});
+   }
+   if(path===commandPath+'/'+oldPriority&&request.method==='DELETE')return new Response(null,{status:204});
    if(path===`/applications/${bot}/emojis`)return Response.json(request.method==='GET'?{items:[]}:{id:nextId()});
    if(/^\/channels\/\d+$/.test(path)&&request.method==='GET'&&path!=='/channels/'+ticketPanelChannel&&path!=='/channels/'+ticketCategory){
      const ticket=DB.raw.prepare('SELECT id FROM discord_tickets WHERE channel_id=?').get(path.split('/').at(-1));
@@ -996,7 +1003,10 @@ test('Discord tickets publish one panel, create private channels, allow one staf
  const controls=(action,ticket,user,role)=>send({type:3,data:{custom_id:'jt:'+action+':'+ticket.id}},ticket.channel_id,user,role?[role]:[],ticket.message_id);
  try{
    await setupTicketCommands(env);
-   assert.deepEqual(calls.filter(x=>x.path.endsWith('/commands')).map(x=>x.body.name),['priority','force-close','add']);
+   assert.deepEqual(calls.filter(x=>x.path===commandPath&&x.method==='POST').map(x=>x.body.name),['close','force-close','add']);
+   assert.ok(calls.some(x=>x.method==='DELETE'&&x.path===commandPath+'/'+oldPriority));
+   assert.ok(!calls.some(x=>x.method==='DELETE'&&x.path===commandPath+'/'+oldSync));
+   assert.equal(DB.raw.prepare('SELECT command_version FROM discord_ticket_setup WHERE id=1').get().command_version,2);
    assert.equal(calls.filter(x=>x.path.endsWith('/emojis')&&x.method==='POST').length,6);
    await Promise.all([publishTicketPanel(env),publishTicketPanel(env)]);
    const panel=calls.find(x=>x.path==='/channels/'+ticketPanelChannel+'/messages').body;
@@ -1012,11 +1022,11 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    assert.equal(calls.filter(x=>x.path==='/channels/'+ticketPanelChannel+'/messages/'+panelMessage&&x.method==='PATCH').length,1);
    assert.equal(DB.raw.prepare('SELECT message_id FROM discord_ticket_panel WHERE id=1').get().message_id,panelMessage);
    const expected={
-     support:{fields:['nickname','problem'],ping:discordRoles['Саппорт']},
-     complaint:{fields:['nickname','target','report','evidence'],ping:discordRoles['Менеджер']},
-     other:{fields:['nickname','question'],ping:discordRoles['Саппорт']},
+     support:{fields:['nickname','problem'],pings:[discordRoles['Саппорт'],'1548515256828039168']},
+     complaint:{fields:['nickname','target','report','evidence'],pings:[discordRoles['Менеджер']]},
+     other:{fields:['nickname','question'],pings:[discordRoles['Саппорт']]},
    };
-   let complaint,support;
+   let complaint,support,other;
    for(const [kind,item] of Object.entries(expected)){
      const opened=await send({type:3,data:{custom_id:'jt:topic:'+kind}});
      assert.equal(opened.reply.type,9);
@@ -1031,6 +1041,7 @@ test('Discord tickets publish one panel, create private channels, allow one staf
      assert.ok(ticket.channel_id&&ticket.message_id);
      if(kind==='complaint')complaint=ticket;
      if(kind==='support')support=ticket;
+     if(kind==='other')other=ticket;
      const channel=calls.find(x=>x.body?.topic==='Jevox Support · Ticket '+ticket.id).body;
      assert.equal(channel.name,'💥・1pirs');
      assert.equal(channel.parent_id,ticketCategory);
@@ -1042,7 +1053,9 @@ test('Discord tickets publish one panel, create private channels, allow one staf
      const notice=calls.find(x=>x.path==='/channels/'+ticket.channel_id+'/messages').body;
      assert.match(notice.embeds[0].image.url,new RegExp('discord-ticket-'+(kind==='support'?'support-v3':kind)+'[.]jpg$'));
      assert.ok(notice.embeds.every(embed=>embed.color===0x313338));
-     assert.deepEqual(notice.allowed_mentions,{parse:[],users:[author],roles:[item.ping]});
+     assert.deepEqual(notice.allowed_mentions,{parse:[],users:[author],roles:item.pings});
+     assert.ok(item.pings.every(role=>notice.content.includes('<@&'+role+'>')));
+     assert.ok(notice.embeds.every(embed=>!embed.fields?.some(field=>field.name==='Приоритет')));
      assert.ok(!JSON.stringify(notice).includes('@everyone'));
      assert.match(calls.at(-1).body.content,new RegExp(ticket.channel_id));
    }
@@ -1062,10 +1075,6 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    const channelPath='/channels/'+complaint.channel_id;
    assert.equal(calls.filter(x=>x.path===channelPath+'/messages'&&x.body?.nonce==='jc-'+complaint.id).length,1);
    const command=(name,ticket,user,role,options=[])=>send({type:2,data:{name,options}},ticket.channel_id,user,[role]);
-   await command('priority',complaint,staff,discordRoles['Менеджер'],[{name:'level',value:'medium'}]);
-   await settle();
-   assert.ok(!calls.some(x=>x.path===channelPath&&x.body?.name));
-   assert.ok(calls.filter(x=>x.path===card).at(-1).body.embeds[1].fields.some(field=>field.name==='Приоритет'&&field.value.includes('Средний')));
    const guest='1573750022762401906';
    await command('add',complaint,staff,discordRoles['Менеджер'],[{name:'user',value:guest}]);
    await settle();
@@ -1073,7 +1082,14 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    await command('force-close',support,staff,discordRoles['Саппорт']);
    await settle();
    assert.match(calls.at(-1).body.content,/Менеджер/);
-   await command('force-close',complaint,staff,discordRoles['Менеджер']);
+   await command('close',complaint,staff,discordRoles['Шериф']);
+   await settle();
+   assert.match(calls.at(-1).body.content,/Саппорт/);
+   await command('close',support,staff,discordRoles['Саппорт']);
+   await settle();
+   const supportClosed=DB.raw.prepare('SELECT closed_at,delete_after FROM discord_tickets WHERE id=?').get(support.id);
+   assert.equal(supportClosed.delete_after-supportClosed.closed_at,3600);
+   await command('close',complaint,staff,discordRoles['Менеджер']);
    await settle();
    const locked=calls.filter(x=>x.path===channelPath&&x.body?.permission_overwrites).at(-1);
    const authorOverwrite=locked.body.permission_overwrites.find(x=>x.id===author);
@@ -1086,9 +1102,20 @@ test('Discord tickets publish one panel, create private channels, allow one staf
    assert.equal(closed.delete_after-closed.closed_at,3600);
    await drainTickets(env);
    assert.ok(!calls.some(x=>x.path===channelPath&&x.method==='DELETE'));
-   DB.raw.prepare('UPDATE discord_tickets SET delete_after=unixepoch()-1 WHERE id=?').run(complaint.id);
-   await drainTickets(env);
+   await command('force-close',complaint,staff,discordRoles['Менеджер']);
+   await settle();
    assert.ok(calls.some(x=>x.path===channelPath&&x.method==='DELETE'));
    assert.ok(DB.raw.prepare('SELECT deleted_at FROM discord_tickets WHERE id=?').get(complaint.id).deleted_at);
+   assert.match(calls.at(-1).body.content,/канал удалён/);
+   await command('force-close',other,staff,discordRoles['Менеджер']);
+   await settle();
+   const immediate=DB.raw.prepare('SELECT closed_at,delete_after,deleted_at FROM discord_tickets WHERE id=?').get(other.id);
+   assert.equal(immediate.delete_after,immediate.closed_at);
+   assert.ok(immediate.deleted_at);
+   assert.equal(DB.raw.prepare('SELECT deleted_at FROM discord_tickets WHERE id=?').get(support.id).deleted_at,null);
+   DB.raw.prepare('UPDATE discord_tickets SET delete_after=unixepoch()-1 WHERE id=?').run(support.id);
+   await drainTickets(env);
+   assert.ok(calls.some(x=>x.path==='/channels/'+support.channel_id&&x.method==='DELETE'));
+   assert.ok(DB.raw.prepare('SELECT deleted_at FROM discord_tickets WHERE id=?').get(support.id).deleted_at);
  }finally{await settle();DB.raw.close();}
 });

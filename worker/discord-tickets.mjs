@@ -9,22 +9,16 @@ const topicButton='jt:topic:';
 const panelVersion=3;
 const ticketColor=0x313338;
 const ownerRole=discordRoles['Владелец'];
-const priorities={
-  normal:{label:'Обычный',icon:'🟢'},
-  medium:{label:'Средний',icon:'🟡'},
-  urgent:{label:'Срочный',icon:'🔴'},
-};
+const commandVersion=2;
 const commandDefinitions=[
-  {name:'priority',description:'Изменить приоритет открытого тикета',options:[{type:3,name:'level',description:'Приоритет',required:true,
-    choices:Object.entries(priorities).map(([value,item])=>({value,name:item.icon+' '+item.label}))}]},
-  {name:'force-close',description:'Сразу закрыть тикет (Менеджер и выше)'},
+  {name:'close',description:'Закрыть тикет (Саппорт и выше)'},
+  {name:'force-close',description:'Закрыть тикет и сразу удалить канал (Менеджер и выше)'},
   {name:'add',description:'Дать участнику доступ к текущему тикету',options:[{type:6,name:'user',description:'Участник сервера',required:true}]},
 ];
 export const isTicketCommand=name=>commandDefinitions.some(command=>command.name===name);
 const timeoutHour=3600;
 const artBase='https://jevox-discord-presence.1pirs.workers.dev/skins/';
 const bannerFor=key=>artBase+(['panel','support'].includes(key)?'discord-ticket-support-v3.jpg':'discord-ticket-'+key+'.jpg');
-const hasPriority=key=>typeof key==='string'&&Object.hasOwn(priorities,key);
 const ticketName=ticket=>'💥・'+ticket.nickname.toLowerCase();
 const emojiName=key=>'jevox_tk_'+key;
 const ticketEmoji=(icons,key,fallback)=>icons[key]?{id:icons[key],name:emojiName(key)}:{name:fallback};
@@ -40,11 +34,11 @@ const generalStaff=[supportRole,...leaders];
 const nicknameField={id:'nickname',label:'Ваш никнейм',min:3,max:16,style:1};
 const details=(id,label,placeholder)=>({id,label,placeholder,min:3,max:900,style:2});
 const categories={
-  support:{label:'Техническая поддержка',icon:'🛠️',defaultPriority:'urgent',roles:generalStaff,ping:supportRole,
+  support:{label:'Техническая поддержка',icon:'🛠️',roles:generalStaff,pings:[supportRole,discordRoles['Младший Администратор']],
     fields:[nicknameField,details('problem','Что случилось?','Опишите проблему и когда она появилась')]},
-  complaint:{label:'Жалобы',icon:'⚖️',defaultPriority:'normal',roles:leaders,ping:managerRole,
+  complaint:{label:'Жалобы',icon:'⚖️',roles:leaders,pings:[managerRole],
     fields:[nicknameField,{id:'target',label:'Никнейм нарушителя',min:3,max:32,style:1},details('report','Суть жалобы','Расскажите, что произошло'),details('evidence','Доказательства','Вставьте ссылки на скриншоты или видео')]},
-  other:{label:'Прочее',icon:'💬',defaultPriority:'normal',roles:generalStaff,ping:supportRole,
+  other:{label:'Прочее',icon:'💬',roles:generalStaff,pings:[supportRole],
     fields:[nicknameField,details('question','Чем можем вам помочь?','Опишите ваш вопрос')]},
 };
 
@@ -162,7 +156,6 @@ function ticketMessage(ticket,icons,initial=false){
   const category=categories[ticket.kind];
   const answers=JSON.parse(ticket.answers);
   const closed=!!ticket.closed_at;
-  const priority=priorities[ticket.priority];
   const color=ticketColor;
   const state=closed?`Закрыл <@${ticket.closed_by}>`:ticket.assignee_id?`Принял <@${ticket.assignee_id}>`:'Ожидает сотрудника';
   const safe=value=>value.replace(/@/g,'@\u200b');
@@ -170,12 +163,11 @@ function ticketMessage(ticket,icons,initial=false){
     {name:'Автор',value:`<@${ticket.author_id}>`,inline:true},
     {name:'Никнейм',value:safe(ticket.nickname),inline:true},
     {name:'Статус',value:state,inline:true},
-    {name:'Приоритет',value:priority.icon+' '+priority.label,inline:true},
     ...category.fields.filter(field=>field.id!=='nickname').map(field=>({name:field.label,value:safe(answers[field.id])})),
   ];
   return {
-    ...(initial?{content:`<@${ticket.author_id}> <@&${category.ping}>`,nonce:'jt-'+ticket.id,enforce_nonce:true}:{}),
-    allowed_mentions:initial?{parse:[],users:[ticket.author_id],roles:[category.ping]}:noMentions,
+    ...(initial?{content:`<@${ticket.author_id}> ${category.pings.map(id=>`<@&${id}>`).join(' ')}`,nonce:'jt-'+ticket.id,enforce_nonce:true}:{}),
+    allowed_mentions:initial?{parse:[],users:[ticket.author_id],roles:category.pings}:noMentions,
     embeds:[{color,image:{url:bannerFor(ticket.kind)}},{title:category.label,color,
       description:closed?(ticket.delete_after?`Канал удалится <t:${ticket.delete_after}:R>.`:'Переписка доступна для чтения.'):'Если нужно, добавьте детали или скриншоты прямо в этом канале.',fields,
       footer:{text:'Jevox Network · Поддержка'},timestamp:new Date(ticket.created_at*1000).toISOString()}],
@@ -196,18 +188,24 @@ export async function setupTicketCommands(env){
   if(!env.DISCORD_BOT_TOKEN)return;
   const {DB:db,DISCORD_BOT_TOKEN:token}=env;
   const row=await db.prepare(`UPDATE discord_ticket_setup SET commands_lease=unixepoch()+60
-    WHERE id=1 AND commands_lease<=unixepoch() AND (command_version<1 OR emoji_json IS NULL)
-    RETURNING command_version,emoji_json`).first();
+    WHERE id=1 AND commands_lease<=unixepoch() AND (command_version<? OR emoji_json IS NULL)
+    RETURNING command_version,emoji_json`).bind(commandVersion).first();
   if(!row)return;
   try{
     const app=await discordData(token,'/applications/@me','GET');
     if(!discordIdValid(app?.id))throw Error('Discord ticket app unavailable');
-    if(row.command_version<1){
+    if(row.command_version<commandVersion){
       const path=`/applications/${app.id}/guilds/${discordGuild}/commands`;
       const commands=await Promise.all(commandDefinitions.map(command=>discordData(token,path,'POST',command)));
       if(!commandDefinitions.every(command=>commands.some(item=>item.name===command.name&&discordIdValid(item.id))))
         throw Error('Discord ticket commands not confirmed');
-      await db.prepare('UPDATE discord_ticket_setup SET command_version=1 WHERE id=1').run();
+      const registered=await discordData(token,path,'GET');
+      const priority=registered.find(command=>command.name==='priority'&&command.type===1);
+      if(priority&&discordIdValid(priority.id))await discordData(token,path+'/'+priority.id,'DELETE');
+      await db.batch([
+        db.prepare('UPDATE discord_ticket_setup SET command_version=? WHERE id=1').bind(commandVersion),
+        db.prepare('UPDATE discord_tickets SET revision=revision+1 WHERE deleted_at IS NULL'),
+      ]);
     }
     if(!row.emoji_json){
       const path=`/applications/${app.id}/emojis`;
@@ -253,6 +251,7 @@ async function syncTicket(env,id=null){
   const db=env.DB,token=env.DISCORD_BOT_TOKEN;
   const ticket=await db.prepare(`UPDATE discord_tickets SET leased_until=unixepoch()+60,attempts=attempts+1
     WHERE id=(SELECT id FROM discord_tickets WHERE deleted_at IS NULL AND synced_revision<revision AND leased_until<=unixepoch()
+    AND (delete_after IS NULL OR delete_after>unixepoch())
     AND (? IS NULL OR id=?) ORDER BY created_at,id LIMIT 1) RETURNING *`).bind(id,id).first();
   if(!ticket)return null;
   try{
@@ -288,8 +287,8 @@ async function syncTicket(env,id=null){
       await discordData(token,channel+'/messages/'+ticket.message_id,'PATCH',ticketMessage(ticket,icons));
     }
     await announceTransitions(env,ticket,icons,channel);
-    await db.prepare('UPDATE discord_tickets SET synced_revision=?,synced_priority=?,leased_until=0 WHERE id=? AND attempts=?')
-      .bind(ticket.revision,ticket.priority,ticket.id,ticket.attempts).run();
+    await db.prepare('UPDATE discord_tickets SET synced_revision=?,leased_until=0 WHERE id=? AND attempts=?')
+      .bind(ticket.revision,ticket.id,ticket.attempts).run();
     return {channel:ticket.channel_id};
   }catch(error){
     console.error('Discord ticket update failed',error.message);
@@ -298,38 +297,39 @@ async function syncTicket(env,id=null){
   }
 }
 
-async function deleteDueTickets(env){
+async function deleteDueTicket(env,id=null){
   const {DB:db,DISCORD_BOT_TOKEN:token}=env;
-  for(let i=0;i<8;i++){
-    const ticket=await db.prepare(`UPDATE discord_tickets SET leased_until=unixepoch()+60,attempts=attempts+1
-      WHERE id=(SELECT id FROM discord_tickets WHERE closed_at IS NOT NULL AND delete_after<=unixepoch()
-        AND deleted_at IS NULL AND channel_id IS NOT NULL AND leased_until<=unixepoch() ORDER BY delete_after LIMIT 1)
-      RETURNING id,channel_id,attempts`).first();
-    if(!ticket)break;
-    try{
-      const path='/channels/'+ticket.channel_id;
-      const response=await discordRequest(token,path);
-      if(response.ok){
-        const channel=await response.json();
-        if(channel.guild_id!==discordGuild||channel.type!==0||channel.topic!==topicMarker(ticket.id))
-          throw Error('Ticket channel identity mismatch');
-        const removal=await discordRequest(token,path,'DELETE');
-        if(!removal.ok&&removal.status!==404)throw Error('Ticket deletion HTTP '+removal.status);
-      }else if(response.status!==404)throw Error('Ticket lookup HTTP '+response.status);
-      await db.batch([
-        db.prepare("UPDATE discord_tickets SET deleted_at=unixepoch(),answers='{}',leased_until=0 WHERE id=? AND attempts=?").bind(ticket.id,ticket.attempts),
-        db.prepare('DELETE FROM discord_ticket_guests WHERE ticket_id=?').bind(ticket.id),
-      ]);
-    }catch(error){
-      console.error('Discord ticket deletion failed',error.message);
-      await db.prepare('UPDATE discord_tickets SET leased_until=unixepoch()+120 WHERE id=? AND attempts=?').bind(ticket.id,ticket.attempts).run();
-    }
+  const ticket=await db.prepare(`UPDATE discord_tickets SET leased_until=unixepoch()+60,attempts=attempts+1
+    WHERE id=(SELECT id FROM discord_tickets WHERE closed_at IS NOT NULL AND delete_after<=unixepoch()
+      AND deleted_at IS NULL AND channel_id IS NOT NULL AND leased_until<=unixepoch()
+      AND (? IS NULL OR id=?) ORDER BY delete_after LIMIT 1)
+    RETURNING id,channel_id,attempts`).bind(id,id).first();
+  if(!ticket)return null;
+  try{
+    const path='/channels/'+ticket.channel_id;
+    const response=await discordRequest(token,path);
+    if(response.ok){
+      const channel=await response.json();
+      if(channel.guild_id!==discordGuild||channel.type!==0||channel.topic!==topicMarker(ticket.id))
+        throw Error('Ticket channel identity mismatch');
+      const removal=await discordRequest(token,path,'DELETE');
+      if(!removal.ok&&removal.status!==404)throw Error('Ticket deletion HTTP '+removal.status);
+    }else if(response.status!==404)throw Error('Ticket lookup HTTP '+response.status);
+    await db.batch([
+      db.prepare("UPDATE discord_tickets SET deleted_at=unixepoch(),answers='{}',leased_until=0 WHERE id=? AND attempts=?").bind(ticket.id,ticket.attempts),
+      db.prepare('DELETE FROM discord_ticket_guests WHERE ticket_id=?').bind(ticket.id),
+    ]);
+    return 'deleted';
+  }catch(error){
+    console.error('Discord ticket deletion failed',error.message);
+    await db.prepare('UPDATE discord_tickets SET leased_until=unixepoch()+120 WHERE id=? AND attempts=?').bind(ticket.id,ticket.attempts).run();
+    return 'pending';
   }
 }
 
 export async function drainTickets(env){
   if(!env.DISCORD_BOT_TOKEN)return;
-  await deleteDueTickets(env);
+  for(let i=0;i<8;i++)if(!await deleteDueTicket(env))break;
   for(let i=0;i<4;i++)if(!await syncTicket(env))break;
 }
 
@@ -366,30 +366,33 @@ async function runTicketCommand(env,data,channel,user){
   const db=env.DB,name=data.data.name,roles=data.member.roles||[];
   const ticket=await db.prepare('SELECT * FROM discord_tickets WHERE channel_id=? AND deleted_at IS NULL').bind(channel).first();
   if(!ticket)return 'Эта команда работает внутри тикета.';
-  if(!staffAccess(ticket,roles))return 'У вас нет прав на это действие.';
-  if(name==='force-close'){
-    if(!roles.includes(ownerRole)&&!leaders.some(role=>roles.includes(role)))return 'Команда доступна с роли «Менеджер».';
+  if(name==='close'){
+    if(!roles.includes(ownerRole)&&!generalStaff.some(role=>roles.includes(role))&&!roles.includes(discordRoles['Спектатор']))
+      return 'Команда доступна с роли «Саппорт».';
     return closeTicket(env,ticket.id,user);
   }
-  if(ticket.closed_at)return 'Тикет уже закрыт.';
-  const option=data.data.options?.find(item=>item.name===(name==='add'?'user':'level'))?.value;
-  if(name==='priority'){
-    if(!hasPriority(option))return 'Выберите приоритет из списка.';
-    const change=await db.prepare(`UPDATE discord_tickets SET priority=?,revision=revision+1
-      WHERE id=? AND closed_at IS NULL AND priority<>? RETURNING id`).bind(option,ticket.id,option).first();
-    if(!change)return 'Приоритет уже установлен или тикет закрыт.';
-  }else{
-    if(!discordIdValid(option)||option===ticket.bot_id||option===ticket.author_id)return 'Выберите другого участника сервера.';
-    const membership=await discordRequest(env.DISCORD_BOT_TOKEN,`/guilds/${discordGuild}/members/${option}`);
-    if(!membership.ok)return membership.status===404?'Участник не найден на сервере.':'Не удалось проверить участника.';
-    const guest=await db.prepare(`INSERT INTO discord_ticket_guests(ticket_id,user_id)
-      SELECT id,? FROM discord_tickets WHERE id=? AND closed_at IS NULL
-      ON CONFLICT(ticket_id,user_id) DO NOTHING RETURNING user_id`).bind(option,ticket.id).first();
-    if(!guest)return 'Участник уже добавлен или тикет закрыт.';
+  if(name==='force-close'){
+    if(!roles.includes(ownerRole)&&!leaders.some(role=>roles.includes(role)))return 'Команда доступна с роли «Менеджер».';
+    const updated=await db.prepare(`UPDATE discord_tickets SET closed_at=COALESCE(closed_at,unixepoch()),
+      closed_by=COALESCE(closed_by,?),delete_after=unixepoch(),revision=revision+1
+      WHERE id=? AND deleted_at IS NULL RETURNING id`).bind(user,ticket.id).first();
+    if(!updated)return 'Канал тикета уже удалён.';
+    const status=await deleteDueTicket(env,ticket.id);
+    return status==='deleted'?'Тикет закрыт, канал удалён.':'Тикет закрыт. Бот повторит удаление канала.';
   }
+  if(!staffAccess(ticket,roles))return 'У вас нет прав на это действие.';
+  if(ticket.closed_at)return 'Тикет уже закрыт.';
+  const option=data.data.options?.find(item=>item.name==='user')?.value;
+  if(!discordIdValid(option)||option===ticket.bot_id||option===ticket.author_id)return 'Выберите другого участника сервера.';
+  const membership=await discordRequest(env.DISCORD_BOT_TOKEN,`/guilds/${discordGuild}/members/${option}`);
+  if(!membership.ok)return membership.status===404?'Участник не найден на сервере.':'Не удалось проверить участника.';
+  const guest=await db.prepare(`INSERT INTO discord_ticket_guests(ticket_id,user_id)
+    SELECT id,? FROM discord_tickets WHERE id=? AND closed_at IS NULL
+    ON CONFLICT(ticket_id,user_id) DO NOTHING RETURNING user_id`).bind(option,ticket.id).first();
+  if(!guest)return 'Участник уже добавлен или тикет закрыт.';
   const result=await syncTicket(env,ticket.id);
   if(!result?.channel)return 'Изменение сохранено, бот применит его при следующей синхронизации.';
-  return name==='priority'?`Приоритет: ${priorities[option].icon} ${priorities[option].label}.`:`<@${option}> получил доступ к тикету.`;
+  return `<@${option}> получил доступ к тикету.`;
 }
 
 export async function ticketInteraction(data,env,ctx){
@@ -417,8 +420,8 @@ export async function ticketInteraction(data,env,ctx){
     const answers=parseAnswers(data,categories[key]);
     if(!answers)return ephemeral('Проверьте никнейм и заполните все поля формы.');
     ctx.waitUntil(resolveInteraction(env,data,async()=>{
-      await env.DB.prepare(`INSERT INTO discord_tickets (id,author_id,bot_id,kind,nickname,answers,priority)
-        VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`).bind(data.id,user,data.application_id,key,answers.nickname,JSON.stringify(answers),categories[key].defaultPriority).run();
+      await env.DB.prepare(`INSERT INTO discord_tickets (id,author_id,bot_id,kind,nickname,answers)
+        VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`).bind(data.id,user,data.application_id,key,answers.nickname,JSON.stringify(answers)).run();
       const result=await syncTicket(env,data.id);
       const created=result?.channel??(await env.DB.prepare('SELECT channel_id FROM discord_tickets WHERE id=?').bind(data.id).first())?.channel_id;
       return created?`Тикет создан. Перейдите в <#${created}>.`:'Тикет принят. Канал появится после обработки ботом.';
