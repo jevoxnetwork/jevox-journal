@@ -116,7 +116,7 @@ export function createHandler(assetMap, dependencies = {}) {
       const name=skinMatch[1].toLowerCase();
       const member=await db().db.prepare('SELECT nickname FROM moderators WHERE nickname=? COLLATE NOCASE').bind(name).first();
       if(!member)return json({skin:null},404);
-      return minecraftSkin(name==='cvasolir'?'lqgend':name);
+      return minecraftSkin(name);
     }
     if (request.method === 'GET' && path === '/favicon.svg') return asset(assetMap, path);
     const textureMatch=path.match(/^\/assets\/minecraft-textures\/([a-f0-9]{32,64})\.png$/);

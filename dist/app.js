@@ -4,6 +4,7 @@ import { manualMarkupPrefix, readFormattedManual, saveFormattedManual, manualLin
 import { createCursorWeb } from './cursor-web.mjs';
 import { createBackgroundParticles, normalizeParticles, particleSliders, particleStyles } from './background-particles.mjs';
 import { enableSkinRotation } from './skin-rotation.mjs';
+import { bundledMemberSkins } from '../worker/minecraft-skins.mjs';
 import { checksPage, loadChecks, bindCheckWork } from './check-work.mjs';
 const $=(s,el=document)=>el.querySelector(s), $$=(s,el=document)=>[...el.querySelectorAll(s)];
 const account=JSON.parse($('#auth-session').textContent);
@@ -380,10 +381,6 @@ function texturedModel(full,slim,height=64){
 }
 enableSkinRotation();
 const loadedSkins=new Map();
-const bundledMemberSkins={
-  cvasolir:{path:'/assets/skins/lqgend-official.png',slim:true},
-  destq:{path:'/assets/minecraft-textures/4e5f43872d3a82d1e3bfb875b2da556af8d15240663419f07bef1f14d4a8d97c.png',slim:false},
-};
 function memberSkin(nickname,full=false,variant='steve'){
   if(!nickname)return staffModel(full,variant);
   const name=nickname.toLowerCase();
@@ -395,7 +392,6 @@ function memberSkin(nickname,full=false,variant='steve'){
 }
 async function resolveSkin(name){
   const response=await window.journalFetch('/api/minecraft-skin/'+encodeURIComponent(name));
-  if(response.status===503)throw Error('Skin service unavailable');
   if(!response.ok)return null;
   const {skin,slim}=await response.json();
   const hash=skin?.match(/^https:\/\/textures\.minecraft\.net\/texture\/([a-f0-9]{32,64})$/)?.[1];
