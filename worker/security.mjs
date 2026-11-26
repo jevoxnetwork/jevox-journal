@@ -1,3 +1,4 @@
+export const isSessionToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 export const now = () => Math.floor(Date.now() / 1000);
 export function randomToken(bytes = 32) {
   const data = crypto.getRandomValues(new Uint8Array(bytes));
@@ -13,11 +14,11 @@ export function equal(a, b) {
   return diff === 0;
 }
 export function cookies(request) {
-  const values = {};
+  const values = Object.create(null);
   for (const pair of (request.headers.get('cookie') || '').split(';')) {
     const at = pair.indexOf('='); if (at < 1) continue;
     const key = pair.slice(0, at).trim();
-    if (Object.hasOwn(values, key)) continue;
+    if (Object.hasOwn(values, key)) { values[key] = null; continue; }
     values[key] = pair.slice(at + 1).trim();
   }
   return values;
@@ -54,10 +55,9 @@ export function secureResponse(response) {
   result.headers.set('Referrer-Policy', 'no-referrer');
   result.headers.set('X-Frame-Options', 'DENY');
   result.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  result.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://textures.minecraft.net; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
+  result.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://textures.minecraft.net; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'");
   return result;
 }
-export function safeJson(data) { return JSON.stringify(data).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e').replaceAll('&', '\\u0026'); }
 export function clean(value, limit = 120) { return String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, limit).trim(); }
 export function authFailureCode(error) {
   if (typeof error?.authFailureCode === 'string' && /^[A-Z0-9_]{1,100}$/.test(error.authFailureCode)) return error.authFailureCode;

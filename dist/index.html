@@ -2,18 +2,19 @@
 <html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#080808"><title>Журнал модерации — Jevox Journal</title><meta name="description" content="Журнал модерации сервера Jevox Network."><link rel="stylesheet" href="style.css"></head>
 <body>
 <div class="grid-backdrop" aria-hidden="true"></div>
-<div class="shell">
+<p id="journal-loading" role="status" style="text-align:center">Проверяем вход…</p>
+<div class="shell" hidden>
 <header class="topbar">
 <a class="brand" href="#overview" aria-label="Jevox Journal — главная"><span data-icon="book"></span>Jevox Journal</a>
 <nav aria-label="Основная навигация" id="navigation"></nav>
-<div class="header-tools"><button class="notify-button pill" id="notifications-button" aria-label="Уведомления" aria-expanded="false"><span data-icon="bell"></span><i id="notify-count" hidden></i></button><button class="profile pill" id="profile-button" aria-label="Меню профиля" aria-expanded="false"><span class="avatar" aria-hidden="true"><!-- PROFILE_INITIALS --></span><strong class="profile-name"><!-- PROFILE_NAME --></strong></button></div>
+<div class="header-tools"><button class="notify-button pill" id="notifications-button" aria-label="Уведомления" aria-expanded="false"><span data-icon="bell"></span><i id="notify-count" hidden></i></button><button class="profile pill" id="profile-button" aria-label="Меню профиля" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><strong class="profile-name"></strong></button></div>
 <div id="notifications-popover" class="popover notifications-popover" hidden></div><div id="nav-popover" class="popover" hidden></div><div id="profile-popover" class="popover profile-popover" hidden><button data-route="profile"><span data-icon="users"></span>Личный профиль</button><button data-route="settings"><span data-icon="settings"></span>Настройки</button></div>
 </header>
 <main id="main" tabindex="-1"></main>
 </div>
 <dialog id="modal"><div id="modal-body"></div></dialog><div id="toast" role="status" aria-live="polite"></div>
-<!-- AUTH_SESSION -->
-<script src="/app.js"></script>
+<script id="auth-session" type="application/json"></script>
 <link rel="stylesheet" href="/auth.css">
-<script src="/account.js"></script>
+<script src="/session-device.js"></script>
+<script src="/journal-entry.js"></script>
 </body></html>

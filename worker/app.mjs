@@ -7,14 +7,11 @@ import { minecraftSkin, minecraftTexture } from './minecraft-skins.mjs';
 import { checkBridge } from './check-bridge.mjs';
 import { Store } from './store.mjs';
 import { authorizationURL, exchangeIdentity } from './providers.mjs';
-import { authConfig, authFailureCode, available, cookie, cookies, equal, json, randomToken, redirect, safeJson, secureResponse } from './security.mjs';
+import { authConfig, authFailureCode, available, cookie, cookies, equal, isSessionToken, json, randomToken, redirect, secureResponse } from './security.mjs';
 
 function publicUser(user) {
   if (!user) return null;
   return { id: user.id, provider: user.provider, providerId: user.provider_id, displayName: user.journal_nickname || user.display_name, position: user.journal_position || null, staffSince: user.journal_staff_since || null, profileBanner: canUseBanner(user.journal_profile_banner,user.journal_position) ? user.journal_profile_banner : null, canSetProfileBanner: !!user.journal_moderator_id, status: user.status };
-}
-function escapeText(value) {
-  return String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 }
 function asset(map, name, status = 200) {
   const file = map[name];
@@ -91,10 +88,13 @@ export function createHandler(assetMap, dependencies = {}) {
     const syncDiscordMember = memberId => {
       if(env.DISCORD_BOT_TOKEN&&memberId)ctx.waitUntil(drainDiscordJobs(env,1,{memberId}).catch(()=>console.error('Discord member sync failed')));
     };
-    const localPreview = env.LOCAL_PREVIEW_NO_LOGIN === '1' && ['localhost', '127.0.0.1'].includes(url.hostname);
-    const getSession = () => localPreview ? Promise.resolve({id:'local-preview', provider:'local', provider_id:'local', display_name:'Администратор', journal_position:'Владелец', status:'active', csrf:'local-preview'}) : token ? db().session(token) : null;
+    const device = request.headers.get('x-journal-device');
+    const getSession = () => url.origin === config.origin && isSessionToken(token) && isSessionToken(device)
+      ? db().session(token, device)
+      : null;
     if (!['GET', 'HEAD', 'POST'].includes(request.method)) return json({ error: 'Method not allowed' }, 405);
     if (request.method === 'HEAD') {
+      if (path.startsWith('/auth/')) return json({ error: 'Method not allowed' }, 405);
       const result = await route(new Request(request.url, { method: 'GET', headers: request.headers }), env, ctx);
       return new Response(null, { status: result.status, headers: result.headers });
     }
@@ -118,20 +118,13 @@ export function createHandler(assetMap, dependencies = {}) {
       if(!member)return json({skin:null},404);
       return minecraftSkin(name==='cvasolir'?'lqgend':name);
     }
-    if (request.method === 'GET' && ['/style.css', '/auth.css', '/auth.js', '/account.js', '/favicon.svg'].includes(path)) return asset(assetMap, path);
+    if (request.method === 'GET' && ['/style.css', '/auth.css', '/auth.js', '/account.js', '/session-device.js', '/journal-entry.js', '/app.js', '/favicon.svg'].includes(path)) return asset(assetMap, path);
     const textureMatch=path.match(/^\/assets\/minecraft-textures\/([a-f0-9]{32,64})\.png$/);
     if(textureMatch&&request.method==='GET')return assetMap[path]?asset(assetMap,path):minecraftTexture(textureMatch[1]);
     if (request.method === 'GET' && path.startsWith('/assets/')) return asset(assetMap, path);
     if (request.method === 'GET' && path === '/api/health') {
       await db().db.prepare('SELECT id FROM auth_users LIMIT 1').first();
-      if (url.searchParams.get('telegram_probe') === '1') {
-        if (!(await db().limit(`probe:${request.headers.get('cf-connecting-ip') || 'local'}`, 5, 600))) return json({ error: 'Too many requests' }, 429);
-        try {
-          const probe = await fetch('https://oauth.telegram.org/.well-known/jwks.json', { redirect: 'manual', signal: AbortSignal.timeout(10000) });
-          return json({ ok: probe.ok, telegramKeysStatus: probe.status }, probe.ok ? 200 : 502);
-        } catch (error) { return json({ ok: false, telegramKeysError: ['TypeError','TimeoutError','AbortError'].includes(error?.name) ? error.name : 'unavailable' }, 502); }
-      }
-      return json({ ok: true, service: 'moderation-journal', runtime: 'cloudflare-worker', database: 'D1', providers: available(config) });
+      return json({ ok: true });
     }
     if (request.method === 'GET' && path === '/api/auth/session') {
       const session = await getSession();
@@ -146,20 +139,23 @@ export function createHandler(assetMap, dependencies = {}) {
       return response;
     }
     const start = path.match(/^\/auth\/(telegram|vk)\/start$/);
-    if (request.method === 'GET' && start) {
+    if (request.method === 'POST' && start) {
+      if (url.origin !== config.origin || request.headers.get('origin') !== config.origin || !isSessionToken(device))
+        return json({ error: 'invalid_response' }, 403);
       const provider = start[1];
-      if (!available(config)[provider]) return redirect('/login?error=not_configured');
-      if (!(await db().limit(`start:${request.headers.get('cf-connecting-ip') || 'local'}`, 30, 600))) return redirect('/login?error=rate_limit');
-      const browser = /^[A-Za-z0-9_-]{43}$/.test(cookieValues[config.flowName] || '') ? cookieValues[config.flowName] : randomToken();
+      if (!available(config)[provider]) return json({ error: 'not_configured' }, 503);
+      if (!(await db().limit(`start:${request.headers.get('cf-connecting-ip') || 'local'}`, 30, 600))) return json({ error: 'rate_limit' }, 429);
+      const browser = isSessionToken(cookieValues[config.flowName]) ? cookieValues[config.flowName] : randomToken();
       const flow = { state: randomToken(), verifier: randomToken(48), nonce: randomToken() };
-      await db().saveFlow(provider, browser, flow);
-      const response = redirect(await authorizationURL(config, provider, flow));
+      await db().saveFlow(provider, browser, flow, device);
+      const response = json({ url: await authorizationURL(config, provider, flow) });
       response.headers.append('Set-Cookie', cookie(config, config.flowName, browser, 600));
       ctx.waitUntil(db().cleanup());
       return response;
     }
     const callback = path.match(/^\/auth\/(telegram|vk)\/callback$/);
     if (request.method === 'GET' && callback) {
+      if (url.origin !== config.origin) return redirect('/login?error=invalid_response');
       const provider = callback[1];
       if (!available(config)[provider]) return redirect('/login?error=not_configured');
       if (!(await db().limit(`callback:${request.headers.get('cf-connecting-ip') || 'local'}`, 60, 600))) return redirect('/login?error=rate_limit');
@@ -178,7 +174,7 @@ export function createHandler(assetMap, dependencies = {}) {
         const user = await db().upsertUser(identity, config);
         if (user.status === 'blocked') return redirect('/login?error=blocked');
         stage = 'SESSION_STORE';
-        const session = await db().createSession(user.id, token);
+        const session = await db().createSession(user.id, flow.device_hash);
         await db().audit(user.id, 'login:' + provider);
         const response = redirect(user.status === 'active' ? '/journal' : '/login');
         response.headers.append('Set-Cookie', cookie(config, config.sessionName, session.token));
@@ -407,24 +403,10 @@ export function createHandler(assetMap, dependencies = {}) {
       syncDiscordMember(m.discordId);
       return json({ok:true},201);
     }
-    if (request.method === 'GET' && (path === '/' || path === '/login')) {
-      const session = await getSession();
-      if (session?.status === 'active') return redirect('/journal');
-      return asset(assetMap, '/login.html');
-    }
-    if (request.method === 'GET' && ['/journal', '/index.html', '/app.js'].includes(path)) {
-      const session = await getSession();
-      if (!session) return path === '/app.js' ? json({ error: 'Войдите в аккаунт.' }, 401) : redirect('/login');
-      if (session.status !== 'active') return path === '/app.js' ? json({ error: 'Доступ не выдан.' }, 403) : redirect('/login');
-      if (path === '/app.js') return asset(assetMap, '/app.js');
-      const template = await asset(assetMap, '/journal.html').text();
-      const user = publicUser(session);
-      const initials = String(user.displayName??'').replace(/\s/g,'').slice(0,2).toUpperCase();
-      const html = template
-        .replace('<!-- PROFILE_INITIALS -->', () => escapeText(initials))
-        .replace('<!-- PROFILE_NAME -->', () => escapeText(user.displayName))
-        .replace('<!-- AUTH_SESSION -->', () => `<script id="auth-session" type="application/json">${safeJson({user,csrf:session.csrf})}</script>`);
-      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+    if (request.method === 'GET' && (path === '/' || path === '/login')) return asset(assetMap, '/login.html');
+    if (request.method === 'GET' && ['/journal', '/index.html'].includes(path)) {
+      if (url.origin !== config.origin || !isSessionToken(token)) return redirect('/login');
+      return asset(assetMap, '/journal.html');
     }
     if (path.startsWith('/api/')) return json({ error: 'Not found' }, 404);
     return new Response('Страница не найдена.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });

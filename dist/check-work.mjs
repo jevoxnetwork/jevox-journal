@@ -63,7 +63,7 @@ export async function loadChecks(page = 1) {
   results.setAttribute('aria-busy', 'true');
 
   try {
-    const response = await fetch('/api/server/' + endpoint + '?' + query, { signal, cache: 'no-store' });
+    const response = await window.journalFetch('/api/server/' + endpoint + '?' + query, { signal, cache: 'no-store' });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Не удалось загрузить проверки.');
     if (signal.aborted || !results.isConnected) return;
@@ -121,7 +121,7 @@ export function bindCheckWork({ csrf, showDelete }) {
     const errorBox = form.querySelector('[role="alert"]');
     errorBox.textContent = '';
     try {
-      const response = await fetch('/api/server/staff-checks/delete', {
+      const response = await window.journalFetch('/api/server/staff-checks/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
         body: JSON.stringify({ id: form.dataset.confirmCheckDelete }),

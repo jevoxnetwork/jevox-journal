@@ -11,12 +11,22 @@
   document.addEventListener('click', async event => {
     if (event.target.closest('[data-action]')?.dataset.action !== 'logout') return;
     try {
-      const response = await fetch('/api/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': session.csrf } });
-      if (!response.ok) throw new Error();
+      await window.journalLogout(session.csrf);
       location.replace('/login');
-    } catch { toast('Не удалось выйти. Попробуйте ещё раз.'); }
+    } catch {
+      const status = document.querySelector('#toast');
+      status.textContent = 'Не удалось выйти. Попробуйте ещё раз.';
+      status.classList.add('visible');
+      setTimeout(() => status.classList.remove('visible'), 3000);
+    }
   });
-  window.addEventListener('focus', async () => {
-    try { const response = await fetch('/api/auth/session', { cache: 'no-store' }); if (response.ok) { const data = await response.json(); if (!data.user || data.user.status !== 'active') location.replace('/login'); } } catch {}
-  });
+  async function verifySession() {
+    try {
+      const current = await window.journalSession();
+      if (current.user?.status !== 'active' || current.user.id !== session.user.id) location.replace('/login');
+    } catch {}
+  }
+  window.addEventListener('focus', verifySession);
+  window.addEventListener('pageshow', verifySession);
+  window.addEventListener('storage', verifySession);
 })();

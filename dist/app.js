@@ -1,6 +1,6 @@
 import { staffPositions as positions, canViewStaff, canViewStaffChecks, canDeleteStaffChecks, canEditRoster, canEditMember, canAssignPosition, canDeleteFormerRecord, canDiscipline, canManageManuals, isSanctionImmune } from '../worker/staff-positions.mjs';
 import { profileBanners, canUseBanner } from '../worker/profile-banners.mjs';
-import { manualMarkupPrefix, readFormattedManual, saveFormattedManual, manualLink } from './manual-content.mjs';
+import { manualMarkupPrefix, readFormattedManual, saveFormattedManual, manualLink, observeManualImages } from './manual-content.mjs';
 import { createCursorWeb } from './cursor-web.mjs';
 import { createBackgroundParticles, normalizeParticles, particleSliders, particleStyles } from './background-particles.mjs';
 import { enableSkinRotation } from './skin-rotation.mjs';
@@ -300,7 +300,7 @@ function updateOverview(id,html){
 async function loadOwnSanctions(){
   if(isSanctionImmune(myPosition))return;
   try{
-    const response=await fetch('/api/me/sanctions',{cache:'no-store'});
+    const response=await window.journalFetch('/api/me/sanctions',{cache:'no-store'});
     if(!response.ok)throw Error();
     ownSanctions=(await response.json()).sanctions;
   }catch{
@@ -394,7 +394,7 @@ function memberSkin(nickname,full=false,variant='steve'){
   return `<div class="skin-slot" data-official-skin="${esc(name)}" data-full="${full}"${style}>${model}</div>`;
 }
 async function resolveSkin(name){
-  const response=await fetch('/api/minecraft-skin/'+encodeURIComponent(name));
+  const response=await window.journalFetch('/api/minecraft-skin/'+encodeURIComponent(name));
   if(response.status===503)throw Error('Skin service unavailable');
   if(!response.ok)return null;
   const {skin,slim}=await response.json();
@@ -513,7 +513,7 @@ async function loadLeaderboard(){
   leaderboardData=undefined;
   renderLeaderboard(board);
   try{
-    const response=await fetch('/api/server/leaderboard?period='+leaderboardPeriod,{cache:'no-store'});
+    const response=await window.journalFetch('/api/server/leaderboard?period='+leaderboardPeriod,{cache:'no-store'});
     if(!response.ok)throw Error();
     const data=await response.json();
     if(!board.isConnected||version!==leaderboardVersion)return;
@@ -575,7 +575,7 @@ function ownerCards(people){
 }
 function team(){return title('team','Команда Jevox Network')+ownerCards(staff)+`<div class="team-search"><span aria-hidden="true">${icon('scan')}</span><input id="team-search" class="input" type="search" maxlength="120" autocomplete="off" aria-label="Поиск по нику или имени и фамилии" placeholder="Поиск по нику или имени и фамилии"></div><section class="panel roster-wrap" id="team-results">${teamTable(rosterWithoutOwnerCards(staff))}</section>`}
 let teamSearchTimer,teamSearchVersion=0;
-async function searchTeam(query){const version=++teamSearchVersion;try{const r=await fetch('/api/staff?q='+encodeURIComponent(query),{cache:'no-store'});if(!r.ok)throw Error();const results=(await r.json()).users;if(version!==teamSearchVersion||route!=='team'||$('#team-search')?.value!==query)return;$('#team-results').innerHTML=teamTable(query.trim()?results:rosterWithoutOwnerCards(results),query)}catch{if(version===teamSearchVersion)toast('Не удалось выполнить поиск.') }}
+async function searchTeam(query){const version=++teamSearchVersion;try{const r=await window.journalFetch('/api/staff?q='+encodeURIComponent(query),{cache:'no-store'});if(!r.ok)throw Error();const results=(await r.json()).users;if(version!==teamSearchVersion||route!=='team'||$('#team-search')?.value!==query)return;$('#team-results').innerHTML=teamTable(query.trim()?results:rosterWithoutOwnerCards(results),query)}catch{if(version===teamSearchVersion)toast('Не удалось выполнить поиск.') }}
 document.addEventListener('input',e=>{if(e.target.id!=='team-search')return;const query=e.target.value;++teamSearchVersion;clearTimeout(teamSearchTimer);teamSearchTimer=setTimeout(()=>searchTeam(query),180)});
 function manualPage(){
   return `<section class="manual-directory">
@@ -590,7 +590,7 @@ function manualPage(){
 async function refreshNotifications(open=false){
   const version=++notificationVersion;
   try{
-    const response=await fetch('/api/notifications',{cache:'no-store'});
+    const response=await window.journalFetch('/api/notifications',{cache:'no-store'});
     if(!response.ok)throw Error();
     const {notifications}=await response.json();
     if(version!==notificationVersion)return;
@@ -612,7 +612,7 @@ async function refreshNotifications(open=false){
     panel.hidden=false;
     $('#notifications-button').setAttribute('aria-expanded','true');
     if(unread){
-      const marked=await fetch('/api/notifications/read',{method:'POST',headers:{'X-CSRF-Token':account.csrf}});
+      const marked=await window.journalFetch('/api/notifications/read',{method:'POST',headers:{'X-CSRF-Token':account.csrf}});
       if(!marked.ok||version!==notificationVersion)return;
       const readAt=Math.floor(Date.now()/1000);
       const readIds=new Set(notifications.map(item=>item.id));
@@ -633,7 +633,7 @@ document.addEventListener('click',async event=>{
   if(!button||button.disabled)return;
   button.disabled=true;
   try{
-    const response=await fetch('/api/notifications/clear',{method:'POST',headers:{'X-CSRF-Token':account.csrf}});
+    const response=await window.journalFetch('/api/notifications/clear',{method:'POST',headers:{'X-CSRF-Token':account.csrf}});
     if(!response.ok)throw Error();
     await refreshNotifications(!$('#notifications-popover').hidden);
     toast('Уведомления очищены');
@@ -663,8 +663,8 @@ function newStaffSanction(){
   </form>`);
 }
 function confirmSanctionRevoke(id){const item=sanctionsList.find(x=>x.id===id);if(!item)return;showModal(modalHeader('Снять наказание',`Снять ${item.type==='warning'?'предупреждение':'выговор'} сотруднику ${selectedStaffProfile?.nickname||''}?`)+`<div class="detail-actions"><button class="button primary" data-confirm-sanction-revoke="${esc(id)}">Снять наказание</button><button class="button" data-action="close-modal">Отмена</button></div>`)}
-async function revokeSanction(button){button.disabled=true;try{const r=await fetch(`/api/staff-sanctions/${encodeURIComponent(button.dataset.confirmSanctionRevoke)}/revoke`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:'{}'}),data=await r.json();if(!r.ok)throw Error(data.error);$('#modal').close();toast('Наказание снято');loadPersonalProfile();loadOwnSanctions()}catch(e){button.disabled=false;toast(e.message||'Не удалось снять наказание.')}}
-document.addEventListener('submit',async e=>{const form=e.target.closest('form[data-staff-sanction]');if(!form)return;e.preventDefault();const button=form.querySelector('[type=submit]'),data=Object.fromEntries(new FormData(form));button.disabled=true;try{const r=await fetch('/api/staff-sanctions',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(data)}),result=await r.json();if(!r.ok)throw Error(result.error);$('#modal').close();toast('Наказание выдано');loadPersonalProfile();loadOwnSanctions()}catch(error){button.disabled=false;toast(error.message||'Не удалось выдать наказание.')}});
+async function revokeSanction(button){button.disabled=true;try{const r=await window.journalFetch(`/api/staff-sanctions/${encodeURIComponent(button.dataset.confirmSanctionRevoke)}/revoke`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:'{}'}),data=await r.json();if(!r.ok)throw Error(data.error);$('#modal').close();toast('Наказание снято');loadPersonalProfile();loadOwnSanctions()}catch(e){button.disabled=false;toast(e.message||'Не удалось снять наказание.')}}
+document.addEventListener('submit',async e=>{const form=e.target.closest('form[data-staff-sanction]');if(!form)return;e.preventDefault();const button=form.querySelector('[type=submit]'),data=Object.fromEntries(new FormData(form));button.disabled=true;try{const r=await window.journalFetch('/api/staff-sanctions',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(data)}),result=await r.json();if(!r.ok)throw Error(result.error);$('#modal').close();toast('Наказание выдано');loadPersonalProfile();loadOwnSanctions()}catch(error){button.disabled=false;toast(error.message||'Не удалось выдать наказание.')}});
 function management(){
   const addButton=assignablePositions().length?'<button class="button primary" data-action="add-moderator">Добавить модератора</button>':'';
   return title('management','Сотрудники и доступ к журналу.')+`<section class="panel">
@@ -717,7 +717,7 @@ async function loadFormerArchive(){
   const list=$('#former-list');
   if(!list)return;
   try{
-    const response=await fetch('/api/admin/former-moderators',{cache:'no-store'});
+    const response=await window.journalFetch('/api/admin/former-moderators',{cache:'no-store'});
     if(!response.ok)throw Error();
     const {moderators}=await response.json();
     if(!list.isConnected)return;
@@ -733,8 +733,8 @@ document.addEventListener('input',event=>{
   if(event.target.id==='former-search')renderFormerList();
 });
 function render(){navigation();let html=route==='settings'?settingsPage():route.startsWith('manuals/')?manualSubpage():(route==='profile'||route.startsWith('profile/'))?profilePage():route==='logs'?actionLogsPage():route==='checks'||route==='staff-checks'?checksPage(route==='staff-checks',icon,canDeleteStaffChecks(myPosition)):route==='top'?leaderboardPage():route==='overview'?overview():route==='team'?team():route==='former'?formerArchive():route==='management'?management():route==='stats'?title('stats','Активность модерации.')+empty('Статистика появится после подключения сервера.'):manualPage();$('#main').innerHTML=`<div class="route-content ${['team','management','former','logs'].includes(route)?'staff-route':''}">${html}</div>`;document.title=(pages[route]?.[0]||(route.startsWith('profile/')?'Профиль сотрудника':'Мануал'))+' — Jevox Journal';if(route.startsWith('manuals/'))loadManualSubpage(route);if(route==='management')loadManagement();if(route==='former')loadFormerArchive();if(route==='logs')loadActionLogs();if(route==='manuals')loadManuals();if(route==='overview')loadServerSummary();if(route==='top')loadLeaderboard();if(route==='checks'||route==='staff-checks')loadChecks();if(route==='profile'||route.startsWith('profile/'))loadPersonalProfile();}
-async function loadStaff(){try{const r=await fetch('/api/staff',{cache:'no-store'});if(!r.ok)throw Error();staff=(await r.json()).users;const owners=$('#team-owners');if(owners)owners.outerHTML=ownerCards(staff);if(route==='team'){const input=$('#team-search');if(input)searchTeam(input.value);else render()}}catch{toast('Не удалось загрузить состав.') }}
-async function loadManagement(){const box=$('#management-list');if(!box)return;try{const r=await fetch('/api/admin/moderators',{cache:'no-store'});if(!r.ok)throw Error();const payload=await r.json(),result=payload.moderators;if(!box.isConnected)return;moderators=result;box.innerHTML=result.length?`<table class="roster"><thead><tr><th>Ник</th><th>Должность</th><th>ВКонтакте</th><th></th></tr></thead><tbody>${positions.map(position=>{const list=result.filter(m=>m.position===position);return list.length?`<tr class="roster-group"><th colspan="4">${esc(position)} <span>${list.length}</span></th></tr>${list.map(m=>`<tr><td><button class="roster-name" data-moderator-id="${esc(m.id)}">${esc(m.nickname)} <span>↗</span></button></td><td>${esc(m.position)}</td><td>${vkLink(m.vk_id)}</td><td class="roster-actions"><div class="management-actions"><button class="button" data-route="profile/${esc(m.id)}">Профиль</button>${canEditMember(myPosition,m.position)?`<button class="button" data-edit-moderator="${esc(m.id)}">Изменить</button>`:''}${canAssignPosition(myPosition,m.position)?`<button class="button danger-button" data-remove-moderator="${esc(m.id)}">Снять</button>`:''}</div></td></tr>`).join('')}`:''}).join('')}</tbody></table>`:'<div class="roster-empty">Пока никого нет в составе.</div>'}catch{if(box.isConnected)box.textContent='Не удалось загрузить состав.'}}
+async function loadStaff(){try{const r=await window.journalFetch('/api/staff',{cache:'no-store'});if(!r.ok)throw Error();staff=(await r.json()).users;const owners=$('#team-owners');if(owners)owners.outerHTML=ownerCards(staff);if(route==='team'){const input=$('#team-search');if(input)searchTeam(input.value);else render()}}catch{toast('Не удалось загрузить состав.') }}
+async function loadManagement(){const box=$('#management-list');if(!box)return;try{const r=await window.journalFetch('/api/admin/moderators',{cache:'no-store'});if(!r.ok)throw Error();const payload=await r.json(),result=payload.moderators;if(!box.isConnected)return;moderators=result;box.innerHTML=result.length?`<table class="roster"><thead><tr><th>Ник</th><th>Должность</th><th>ВКонтакте</th><th></th></tr></thead><tbody>${positions.map(position=>{const list=result.filter(m=>m.position===position);return list.length?`<tr class="roster-group"><th colspan="4">${esc(position)} <span>${list.length}</span></th></tr>${list.map(m=>`<tr><td><button class="roster-name" data-moderator-id="${esc(m.id)}">${esc(m.nickname)} <span>↗</span></button></td><td>${esc(m.position)}</td><td>${vkLink(m.vk_id)}</td><td class="roster-actions"><div class="management-actions"><button class="button" data-route="profile/${esc(m.id)}">Профиль</button>${canEditMember(myPosition,m.position)?`<button class="button" data-edit-moderator="${esc(m.id)}">Изменить</button>`:''}${canAssignPosition(myPosition,m.position)?`<button class="button danger-button" data-remove-moderator="${esc(m.id)}">Снять</button>`:''}</div></td></tr>`).join('')}`:''}).join('')}</tbody></table>`:'<div class="roster-empty">Пока никого нет в составе.</div>'}catch{if(box.isConnected)box.textContent='Не удалось загрузить состав.'}}
 function formatDate(date){return date?esc(date.split('-').reverse().join('.')):'Не указана'}
 function formatTimestamp(timestamp){return timestamp?esc(new Date(timestamp*1000).toLocaleDateString('ru-RU')):'Неизвестно'}
 function formerDetails(id){
@@ -766,7 +766,7 @@ function formerDetails(id){
   </div>`,true);
 }
 function confirmRemoval(id){const m=moderators.find(x=>x.id===id);if(!m)return;showModal(modalHeader('Снять сотрудника',`Снять ${m.nickname} с должности «${m.position}»?`)+`<p class="form-hint">Сотрудник переместится в бывший состав и потеряет доступ к журналу.</p><form data-removal-form="${esc(id)}" class="removal-form"><label>Причина снятия<textarea class="input" name="reason" required minlength="3" maxlength="500" rows="3" placeholder="Укажите причину снятия"></textarea></label><div class="detail-actions"><button class="button danger-button" type="submit">Снять сотрудника</button><button class="button" type="button" data-action="close-modal">Отмена</button></div></form>`)}
-async function removeModerator(form){const button=form.querySelector('button[type=submit]'),reason=form.elements.reason.value.trim();if(reason.length<3){toast('Укажите причину снятия.');return}button.disabled=true;try{const r=await fetch(`/api/admin/moderators/${encodeURIComponent(form.dataset.removalForm)}/remove`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify({reason})});const result=await r.json();if(!r.ok)throw Error(result.error);$('#modal').close();toast('Сотрудник снят');await loadManagement();loadStaff()}catch(error){toast(error.message||'Не удалось снять сотрудника.');button.disabled=false}}
+async function removeModerator(form){const button=form.querySelector('button[type=submit]'),reason=form.elements.reason.value.trim();if(reason.length<3){toast('Укажите причину снятия.');return}button.disabled=true;try{const r=await window.journalFetch(`/api/admin/moderators/${encodeURIComponent(form.dataset.removalForm)}/remove`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify({reason})});const result=await r.json();if(!r.ok)throw Error(result.error);$('#modal').close();toast('Сотрудник снят');await loadManagement();loadStaff()}catch(error){toast(error.message||'Не удалось снять сотрудника.');button.disabled=false}}
 function confirmFormerAction(id,action){
   const member=formerModerators.find(person=>person.id===id);
   const deleting=action==='delete';
@@ -790,7 +790,7 @@ async function submitFormerAction(button,action){
   notice.textContent='';
   button.disabled=true;
   try{
-    const response=await fetch(`/api/admin/former-moderators/${encodeURIComponent(button.dataset.recordId)}/${action}`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:'{}'});
+    const response=await window.journalFetch(`/api/admin/former-moderators/${encodeURIComponent(button.dataset.recordId)}/${action}`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:'{}'});
     const result=await response.json();
     if(!response.ok)throw Error(result.error);
     if(button.isConnected)$('#modal').close();
@@ -809,7 +809,7 @@ document.addEventListener('click',event=>{
   else confirmFormerAction(button.dataset.recordId,button.dataset.formerAction);
 });
 function confirmManualDeletion(id){const heading=$('.manual-page-header h1');showModal(modalHeader('Удалить мануал',`Удалить «${heading?.textContent||'мануал'}»?`)+`<p class="form-hint">Мануал будет удалён из журнала.</p><div class="detail-actions"><button class="button danger-button" data-confirm-manual-delete="${esc(id)}">Удалить мануал</button><button class="button" data-action="close-modal">Отмена</button></div>`)}
-async function deleteManual(button){button.disabled=true;try{const r=await fetch(`/api/manuals/${encodeURIComponent(button.dataset.confirmManualDelete)}/delete`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:'{}'}),result=await r.json();if(!r.ok)throw Error(result.error);$('#modal').close();toast('Мануал удалён');navigate('manuals')}catch(error){toast(error.message||'Не удалось удалить мануал.');button.disabled=false}}
+async function deleteManual(button){button.disabled=true;try{const r=await window.journalFetch(`/api/manuals/${encodeURIComponent(button.dataset.confirmManualDelete)}/delete`,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:'{}'}),result=await r.json();if(!r.ok)throw Error(result.error);$('#modal').close();toast('Мануал удалён');navigate('manuals')}catch(error){toast(error.message||'Не удалось удалить мануал.');button.disabled=false}}
 document.addEventListener('submit',e=>{const form=e.target.closest('form[data-removal-form]');if(!form)return;e.preventDefault();removeModerator(form)});
 function addModerator(){const notice=$('#management-add-error');if(notice)notice.textContent='';showModal(staffModalHeader('Добавить модератора','Укажите данные сотрудника и хотя бы один ID для входа.')+`<form data-add-moderator novalidate class="moderator-form staff-edit-grid"><p class="staff-form-error" data-add-error role="alert"></p><section class="staff-info-card"><h3>Служба на сервере</h3><div class="staff-info-fields"><label>Ник в Minecraft<input class="input" name="nickname" required minlength="3" maxlength="16" pattern="[A-Za-z0-9_]+" placeholder="Например, Player_123"></label><label>Должность<select class="input" name="position" required>${assignableFor().map(x=>`<option ${x==='Джуниор'?'selected':''}>${esc(x)}</option>`).join('')}</select></label><label>В команде проекта с<input class="input" type="date" name="staffSince" max="${new Date().toISOString().slice(0,10)}"></label><label>Дата назначения<input class="input" type="date" name="appointmentDate" value="${new Date().toISOString().slice(0,10)}" max="${new Date().toISOString().slice(0,10)}"></label></div></section><section class="staff-info-card"><h3>Личные данные</h3><div class="staff-info-fields"><label>Имя и фамилия<input class="input" name="realName" required minlength="2" maxlength="120" autocomplete="off" placeholder="Имя Фамилия"></label><label>Дата рождения<input class="input" type="date" name="birthDate" max="${new Date().toISOString().slice(0,10)}" required></label></div></section><section class="staff-info-card staff-info-wide"><h3>Вход в журнал</h3><div class="staff-info-fields"><label>ID ВКонтакте<input class="input" name="vkId" inputmode="numeric" pattern="[0-9]{1,30}" placeholder="Только цифры"></label><label>ID Telegram<input class="input" name="telegramId" inputmode="numeric" pattern="[0-9]{1,30}" placeholder="Только цифры"></label><label>ID Discord<input class="input" name="discordId" inputmode="numeric" pattern="[1-9][0-9]{16,19}" maxlength="20" required placeholder="ID пользователя Discord"></label></div></section><button class="button primary form-save" type="submit">Добавить в состав</button></form>`,true)}
 function moderatorDetails(id){
@@ -828,7 +828,7 @@ async function loadManuals(){
   const box=$('#manual-list');
   if(!box)return;
   try{
-    const response=await fetch('/api/manuals',{cache:'no-store'});
+    const response=await window.journalFetch('/api/manuals',{cache:'no-store'});
     if(!response.ok)throw Error();
     const {manuals}=await response.json();
     if(!box.isConnected)return;
@@ -850,9 +850,10 @@ async function loadManuals(){
   }
 }
 function manualSubpage(){return `<div class="manual-page"><button class="back-link" data-route="manuals">← Все мануалы</button><div id="manual-page-content"><div class="panel manual-loading">Загрузка…</div></div></div>`}
-async function loadManualSubpage(current){const box=$('#manual-page-content');if(!box)return;const parts=current.split('/'),mode=parts[1],id=parts[2];if((mode==='new'||mode==='edit')&&!mayManageManuals){box.innerHTML=empty('Нет доступа к редактору.');return}let m={title:'',description:'',content:''};if(mode!=='new'){try{const r=await fetch('/api/manuals/'+encodeURIComponent(id),{cache:'no-store'});if(!r.ok)throw Error();m=(await r.json()).manual}catch{if(box.isConnected)box.innerHTML=empty('Не удалось загрузить мануал.');return}}if(!box.isConnected||route!==current)return;if(mode==='view'){document.title=m.title+' — Jevox Journal';box.innerHTML=`<header class="manual-page-header"><div><div class="eyebrow">МАНУАЛ</div><h1>${esc(m.title)}</h1><p>${esc(m.description)}</p><p class="manual-author">Автор: <strong>${esc(m.author_name||'Неизвестен')}</strong></p></div>${mayManageManuals?`<div class="management-actions"><button class="button" data-edit-manual="${esc(id)}">Редактировать</button><button class="button danger-button" data-delete-manual="${esc(id)}">Удалить</button></div>`:''}</header><article class="panel manual-document manual-content">${renderManual(m.content)}</article>`;return}box.innerHTML=`<header class="manual-page-header"><div><div class="eyebrow">МАНУАЛЫ</div><h1>${mode==='new'?'Новый мануал':'Редактирование мануала'}</h1><p>Создайте понятный материал для сотрудников.</p></div></header><form data-manual-form="${esc(id||'new')}" class="panel manual-form manual-editor-page"><label>Название<input class="input" name="title" maxlength="120" required value="${esc(m.title)}" placeholder="Например, как провести проверку"></label><label>Описание<textarea class="input" name="description" maxlength="500" rows="2" required placeholder="Коротко о содержимом">${esc(m.description)}</textarea></label><fieldset class="visibility-options"><legend>Кому виден мануал</legend><label class="visibility-radio"><input type="radio" name="visibility" value="all" ${!m.allowed_positions?'checked':''}> Всем сотрудникам</label><label class="visibility-radio"><input type="radio" name="visibility" value="selected" ${m.allowed_positions?'checked':''}> Выбранным должностям</label><div class="visibility-positions" ${m.allowed_positions?'':'hidden'}>${positions.map(position=>`<label><input type="checkbox" name="allowedPosition" value="${esc(position)}" ${m.allowed_positions?.includes(position)?'checked':''}> ${esc(position)}</label>`).join('')}</div><p>Администратор и Владелец всегда имеют доступ.</p></fieldset><label id="editor-label">Содержимое</label>${manualToolbar()}<div class="image-controls" hidden><span>Размер фото</span><input type="range" min="15" max="100" step="1" value="100" aria-label="Размер фото"><output>100%</output><div class="editor-tool-group" role="group" aria-label="Выравнивание фото"><button type="button" data-image-align="left" aria-label="Фото слева">${alignmentIcon('left')}</button><button type="button" data-image-align="center" aria-label="Фото по центру">${alignmentIcon('center')}</button><button type="button" data-image-align="right" aria-label="Фото справа">${alignmentIcon('right')}</button></div><button type="button" data-image-move="up" title="Переместить выше">↑</button><button type="button" data-image-move="down" title="Переместить ниже">↓</button><button type="button" data-image-remove title="Удалить фото">Удалить</button></div><div class="manual-editor visual-editor manual-content" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="editor-label" data-placeholder="Напишите мануал…">${m.content?renderManual(m.content):''}</div><article class="manual-content manual-preview" id="manual-preview" aria-label="Предпросмотр мануала" hidden></article><input type="file" id="manual-photo" accept="image/png,image/jpeg,image/webp,image/gif" hidden><p class="form-hint">Выберите фото, чтобы изменить размер, или перетащите его в нужное место.</p><div class="editor-actions"><button class="button primary" type="submit">Сохранить мануал</button><button class="button" type="button" data-route="manuals">Отмена</button></div></form>`}
-function renderManual(content){if(content.startsWith(manualMarkupPrefix))return readFormattedManual(content);return esc(content).split('\n').map(line=>{const image=line.match(/^!\[Фото\]\((data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+|\/api\/manual-images\/[a-f0-9-]{36})\)(?:\{width=(\d{1,3})\})?$/);if(image){const width=image[2]?Math.max(15,Math.min(100,Number(image[2]))):null;return `<img src="${image[1]}" alt="Фото из мануала" loading="lazy" draggable="true"${width?` data-width="${width}" style="width:${width}%"`:''}>`};const inline=line.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>');if(inline.startsWith('### '))return '<h3>'+inline.slice(4)+'</h3>';if(inline.startsWith('## '))return '<h2>'+inline.slice(3)+'</h2>';if(inline.startsWith('- '))return '<div class="manual-item">• '+inline.slice(2)+'</div>';return inline?'<p>'+inline+'</p>':'<br>'}).join('')}
+async function loadManualSubpage(current){const box=$('#manual-page-content');if(!box)return;const parts=current.split('/'),mode=parts[1],id=parts[2];if((mode==='new'||mode==='edit')&&!mayManageManuals){box.innerHTML=empty('Нет доступа к редактору.');return}let m={title:'',description:'',content:''};if(mode!=='new'){try{const r=await window.journalFetch('/api/manuals/'+encodeURIComponent(id),{cache:'no-store'});if(!r.ok)throw Error();m=(await r.json()).manual}catch{if(box.isConnected)box.innerHTML=empty('Не удалось загрузить мануал.');return}}if(!box.isConnected||route!==current)return;if(mode==='view'){document.title=m.title+' — Jevox Journal';box.innerHTML=`<header class="manual-page-header"><div><div class="eyebrow">МАНУАЛ</div><h1>${esc(m.title)}</h1><p>${esc(m.description)}</p><p class="manual-author">Автор: <strong>${esc(m.author_name||'Неизвестен')}</strong></p></div>${mayManageManuals?`<div class="management-actions"><button class="button" data-edit-manual="${esc(id)}">Редактировать</button><button class="button danger-button" data-delete-manual="${esc(id)}">Удалить</button></div>`:''}</header><article class="panel manual-document manual-content">${renderManual(m.content)}</article>`;return}box.innerHTML=`<header class="manual-page-header"><div><div class="eyebrow">МАНУАЛЫ</div><h1>${mode==='new'?'Новый мануал':'Редактирование мануала'}</h1><p>Создайте понятный материал для сотрудников.</p></div></header><form data-manual-form="${esc(id||'new')}" class="panel manual-form manual-editor-page"><label>Название<input class="input" name="title" maxlength="120" required value="${esc(m.title)}" placeholder="Например, как провести проверку"></label><label>Описание<textarea class="input" name="description" maxlength="500" rows="2" required placeholder="Коротко о содержимом">${esc(m.description)}</textarea></label><fieldset class="visibility-options"><legend>Кому виден мануал</legend><label class="visibility-radio"><input type="radio" name="visibility" value="all" ${!m.allowed_positions?'checked':''}> Всем сотрудникам</label><label class="visibility-radio"><input type="radio" name="visibility" value="selected" ${m.allowed_positions?'checked':''}> Выбранным должностям</label><div class="visibility-positions" ${m.allowed_positions?'':'hidden'}>${positions.map(position=>`<label><input type="checkbox" name="allowedPosition" value="${esc(position)}" ${m.allowed_positions?.includes(position)?'checked':''}> ${esc(position)}</label>`).join('')}</div><p>Администратор и Владелец всегда имеют доступ.</p></fieldset><label id="editor-label">Содержимое</label>${manualToolbar()}<div class="image-controls" hidden><span>Размер фото</span><input type="range" min="15" max="100" step="1" value="100" aria-label="Размер фото"><output>100%</output><div class="editor-tool-group" role="group" aria-label="Выравнивание фото"><button type="button" data-image-align="left" aria-label="Фото слева">${alignmentIcon('left')}</button><button type="button" data-image-align="center" aria-label="Фото по центру">${alignmentIcon('center')}</button><button type="button" data-image-align="right" aria-label="Фото справа">${alignmentIcon('right')}</button></div><button type="button" data-image-move="up" title="Переместить выше">↑</button><button type="button" data-image-move="down" title="Переместить ниже">↓</button><button type="button" data-image-remove title="Удалить фото">Удалить</button></div><div class="manual-editor visual-editor manual-content" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="editor-label" data-placeholder="Напишите мануал…">${m.content?renderManual(m.content):''}</div><article class="manual-content manual-preview" id="manual-preview" aria-label="Предпросмотр мануала" hidden></article><input type="file" id="manual-photo" accept="image/png,image/jpeg,image/webp,image/gif" hidden><p class="form-hint">Выберите фото, чтобы изменить размер, или перетащите его в нужное место.</p><div class="editor-actions"><button class="button primary" type="submit">Сохранить мануал</button><button class="button" type="button" data-route="manuals">Отмена</button></div></form>`}
+function renderManual(content){if(content.startsWith(manualMarkupPrefix))return readFormattedManual(content);return esc(content).split('\n').map(line=>{const image=line.match(/^!\[Фото\]\((data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+|\/api\/manual-images\/[a-f0-9-]{36})\)(?:\{width=(\d{1,3})\})?$/);if(image){const width=image[2]?Math.max(15,Math.min(100,Number(image[2]))):null;return `<img ${image[1].startsWith('/')?'data-journal-image':'src'}="${image[1]}" alt="Фото из мануала" loading="lazy" draggable="true"${width?` data-width="${width}" style="width:${width}%"`:''}>`};const inline=line.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>');if(inline.startsWith('### '))return '<h3>'+inline.slice(4)+'</h3>';if(inline.startsWith('## '))return '<h2>'+inline.slice(3)+'</h2>';if(inline.startsWith('- '))return '<div class="manual-item">• '+inline.slice(2)+'</div>';return inline?'<p>'+inline+'</p>':'<br>'}).join('')}
 function manualEditor(id){navigate(id?'manuals/edit/'+id:'manuals/new')}
+observeManualImages($('#main'));
 let manualSelection=null, selectedManualImage=null, draggedManualImage=null;
 function rememberManualSelection(){const el=$('.visual-editor'),selection=window.getSelection();if(el&&selection?.rangeCount&&el.contains(selection.anchorNode))manualSelection=selection.getRangeAt(0).cloneRange()}
 function restoreManualSelection(){const el=$('.visual-editor');if(!el)return false;el.focus();const sel=window.getSelection();if(manualSelection&&el.contains(manualSelection.commonAncestorContainer)){sel.removeAllRanges();sel.addRange(manualSelection)}else{const range=document.createRange();range.selectNodeContents(el);range.collapse(false);sel.removeAllRanges();sel.addRange(range)}return true}
@@ -980,7 +981,7 @@ document.addEventListener('submit', async event => {
 
   button.disabled = true;
   try {
-    const response = await fetch('/api/admin/moderators', {
+    const response = await window.journalFetch('/api/admin/moderators', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},
       body:JSON.stringify(data)
@@ -1014,7 +1015,7 @@ document.addEventListener('change',e=>{if(e.target.matches('form[data-edit-form]
 document.addEventListener('mousedown',e=>{if(e.target.closest('.editor-toolbar button')){rememberManualSelection();e.preventDefault()}});
 document.addEventListener('paste',e=>{if(!e.target.closest('.visual-editor'))return;e.preventDefault();document.execCommand('insertText',false,e.clipboardData.getData('text/plain'));rememberManualSelection()});
 async function uploadManualImage(file,image){
-  const post=async(url,data)=>{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(data)}),result=await r.json();if(!r.ok)throw Error(result.error||'Ошибка загрузки');return result};
+  const post=async(url,data)=>{const r=await window.journalFetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(data)}),result=await r.json();if(!r.ok)throw Error(result.error||'Ошибка загрузки');return result};
   try{
     const {id,chunkCount}=await post('/api/manual-images/start',{type:file.type,size:file.size});
     for(let index=0;index<chunkCount;index++){
@@ -1023,18 +1024,18 @@ async function uploadManualImage(file,image){
       await post(`/api/manual-images/${id}/chunk`,{index,data:encoded});
     }
     await post(`/api/manual-images/${id}/finish`,{});
-    if(image.isConnected){const old=image.src;image.src='/api/manual-images/'+id;delete image.dataset.uploading;URL.revokeObjectURL(old);toast('Фото загружено')}
+    if(image.isConnected){image.dataset.journalImage='/api/manual-images/'+id;delete image.dataset.uploading;toast('Фото загружено')}
   }catch(error){if(image.isConnected){delete image.dataset.uploading;image.dataset.uploadError='true';toast(error.message||'Не удалось загрузить фото. Удалите его и попробуйте снова.')}}
 }
 document.addEventListener('change',e=>{if(e.target.id!=='manual-photo'||!e.target.files[0])return;const file=e.target.files[0];if(!['image/png','image/jpeg','image/webp','image/gif'].includes(file.type)||!file.size){toast('Выберите изображение PNG, JPG, GIF или WebP.');e.target.value='';return}if(!restoreManualSelection())return;const image=document.createElement('img');image.src=URL.createObjectURL(file);image.alt='Фото из мануала';image.draggable=true;image.dataset.uploading='true';const sel=window.getSelection(),range=sel.getRangeAt(0);range.deleteContents();range.insertNode(image);range.setStartAfter(image);range.collapse(true);sel.removeAllRanges();sel.addRange(range);rememberManualSelection();selectManualImage(image);e.target.value='';toast('Фото загружается…');uploadManualImage(file,image)});
-document.addEventListener('submit',async e=>{const form=e.target.closest('form[data-edit-form],form[data-manual-form]');if(!form)return;e.preventDefault();const button=form.querySelector('button[type=submit],button:not([type])'),data=Object.fromEntries(new FormData(form));let url,success;if(form.dataset.editForm){if(!data.vkId.trim()&&!data.telegramId.trim()){toast('Укажите ID ВКонтакте или Telegram.');return}url=`/api/admin/moderators/${encodeURIComponent(form.dataset.editForm)}/edit`;success='Данные сохранены'}else{if($('.visual-editor img[data-uploading]')){toast('Дождитесь загрузки фотографии.');return}if($('.visual-editor img[data-upload-error]')){toast('Удалите незагруженное фото и попробуйте снова.');return}data.allowedPositions=data.visibility==='selected'?new FormData(form).getAll('allowedPosition'):null;delete data.visibility;delete data.allowedPosition;if(Array.isArray(data.allowedPositions)&&!data.allowedPositions.length){toast('Выберите хотя бы одну должность.');return}data.content=saveFormattedManual($('.visual-editor'));if(!data.content){toast('Добавьте содержимое мануала.');return}if(data.content.length>9000000){toast('Текст мануала слишком большой.');return}url='/api/manuals'+(form.dataset.manualForm==='new'?'':'/'+encodeURIComponent(form.dataset.manualForm));success='Мануал сохранён'}button.disabled=true;try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(data)}),result=await r.json();if(!r.ok)throw Error(result.error);if(form.dataset.manualForm){toast(success);navigate('manuals');return}$('#modal').close();toast(success);if(route==='management'){await loadManagement();loadStaff()}if(route==='manuals')loadManuals();}catch(err){toast(err.message||'Не удалось сохранить.');button.disabled=false}});
+document.addEventListener('submit',async e=>{const form=e.target.closest('form[data-edit-form],form[data-manual-form]');if(!form)return;e.preventDefault();const button=form.querySelector('button[type=submit],button:not([type])'),data=Object.fromEntries(new FormData(form));let url,success;if(form.dataset.editForm){if(!data.vkId.trim()&&!data.telegramId.trim()){toast('Укажите ID ВКонтакте или Telegram.');return}url=`/api/admin/moderators/${encodeURIComponent(form.dataset.editForm)}/edit`;success='Данные сохранены'}else{if($('.visual-editor img[data-uploading]')){toast('Дождитесь загрузки фотографии.');return}if($('.visual-editor img[data-upload-error]')){toast('Удалите незагруженное фото и попробуйте снова.');return}data.allowedPositions=data.visibility==='selected'?new FormData(form).getAll('allowedPosition'):null;delete data.visibility;delete data.allowedPosition;if(Array.isArray(data.allowedPositions)&&!data.allowedPositions.length){toast('Выберите хотя бы одну должность.');return}data.content=saveFormattedManual($('.visual-editor'));if(!data.content){toast('Добавьте содержимое мануала.');return}if(data.content.length>9000000){toast('Текст мануала слишком большой.');return}url='/api/manuals'+(form.dataset.manualForm==='new'?'':'/'+encodeURIComponent(form.dataset.manualForm));success='Мануал сохранён'}button.disabled=true;try{const r=await window.journalFetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(data)}),result=await r.json();if(!r.ok)throw Error(result.error);if(form.dataset.manualForm){toast(success);navigate('manuals');return}$('#modal').close();toast(success);if(route==='management'){await loadManagement();loadStaff()}if(route==='manuals')loadManuals();}catch(err){toast(err.message||'Не удалось сохранить.');button.disabled=false}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenus()});window.addEventListener('popstate',()=>navigate(location.hash.slice(1)||'overview'));window.addEventListener('hashchange',()=>{const next=location.hash.slice(1)||'overview';if(next!==route)navigate(next)});$$('[data-icon]').forEach(e=>e.innerHTML=icon(e.dataset.icon));navigate(location.hash.slice(1)||'overview');loadStaff();loadOwnSanctions();refreshNotifications();setInterval(()=>{refreshNotifications();loadOwnSanctions()},30000);
 
 function serverTime(ms){return ms?esc(new Date(ms).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',dateStyle:'short',timeStyle:'short'})):'—'}
 
 async function loadServerSummary(){
   try{
-    const response=await fetch('/api/server/summary',{cache:'no-store'});
+    const response=await window.journalFetch('/api/server/summary',{cache:'no-store'});
     if(!response.ok)throw Error();
     serverSummary=await response.json();
   }catch{
@@ -1075,7 +1076,7 @@ async function saveProfileBanner(button){
   options.forEach(option=>option.disabled=true);
   notice.textContent='';
   try{
-    const response=await fetch('/api/me/profile/banner',{
+    const response=await window.journalFetch('/api/me/profile/banner',{
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},
       body:JSON.stringify({banner:button.dataset.selectProfileBanner||null})
@@ -1223,7 +1224,7 @@ document.addEventListener('submit',async event=>{
     ?{checks:form.elements.checks.valueAsNumber,punishments:form.elements.punishments.valueAsNumber}
     :Object.fromEntries(new FormData(form));
   try{
-    const response=await fetch(`/api/staff/${encodeURIComponent(memberId)}/profile/${operation}`,{
+    const response=await window.journalFetch(`/api/staff/${encodeURIComponent(memberId)}/profile/${operation}`,{
       method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':account.csrf},body:JSON.stringify(payload),
     });
     const result=await response.json();
@@ -1241,7 +1242,7 @@ async function loadPersonalProfile(){
   const box=$('#personal-content');
   if(!box)return;
   const read=async path=>{
-    const response=await fetch(path,{cache:'no-store'});
+    const response=await window.journalFetch(path,{cache:'no-store'});
     if(!response.ok)throw Error('Profile request failed');
     return response.json();
   };
@@ -1318,7 +1319,7 @@ async function loadActionLogs(before=0){
   if(!before)list.textContent='Загрузка…';
   try{
     const query=new URLSearchParams({actor,before:String(before)});
-    const response=await fetch('/api/action-logs?'+query,{cache:'no-store'});
+    const response=await window.journalFetch('/api/action-logs?'+query,{cache:'no-store'});
     if(!response.ok)throw Error();
     const data=await response.json();
     if(!list.isConnected||select.value!==actor)return;

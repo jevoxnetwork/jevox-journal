@@ -14,16 +14,18 @@ export const users = sqliteTable('auth_users', {
   lastLoginAt: integer('last_login_at').notNull(),
 }, t => [uniqueIndex('auth_users_identity').on(t.provider, t.subject)]);
 
-export const sessions = sqliteTable('auth_sessions', {
+export const sessions = sqliteTable('journal_browser_sessions', {
   tokenHash: text('token_hash').primaryKey(),
+  deviceHash: text('device_hash').notNull(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   csrf: text('csrf').notNull(),
   createdAt: integer('created_at').notNull(),
   expiresAt: integer('expires_at').notNull(),
-}, t => [index('auth_sessions_user').on(t.userId)]);
+}, t => [index('journal_browser_sessions_user').on(t.userId)]);
 
-export const flows = sqliteTable('auth_flows', {
+export const flows = sqliteTable('journal_browser_flows', {
   stateHash: text('state_hash').primaryKey(),
+  deviceHash: text('device_hash').notNull(),
   browserHash: text('browser_hash').notNull(),
   provider: text('provider').notNull(),
   verifier: text('verifier').notNull(),

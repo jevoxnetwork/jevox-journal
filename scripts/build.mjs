@@ -22,7 +22,7 @@ const browser = await build({
 assets['/app.js'] = { data:Buffer.from(browser.outputFiles[0].contents).toString('base64'), type:types['.js'] };
 await add('dist/style.css','/style.css');
 await directory('dist/assets');
-for (const file of ['login.html','auth.css','auth.js','account.js','favicon.svg']) await add('public/'+file,'/'+file);
+for (const file of ['login.html','auth.css','auth.js','account.js','session-device.js','journal-entry.js','favicon.svg']) await add('public/'+file,'/'+file);
 await mkdir(path.join(root,'dist/server'),{recursive:true});
 await mkdir(path.join(root,'dist/.openai'),{recursive:true});
 await build({

@@ -16,9 +16,7 @@
   if (location.search) history.replaceState(null, '', '/login');
   async function refresh() {
     try {
-      const response = await fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' });
-      if (!response.ok) throw new Error();
-      current = await response.json();
+      current = await window.journalSession();
       if (current.user?.status === 'active') { location.replace('/journal'); return; }
       $('#login-choice').hidden = !!current.user;
       $('#account-pending').hidden = !current.user;
@@ -45,7 +43,18 @@
       $('#provider-notice').textContent = 'Не удалось связаться с сервером. Обновите страницу через несколько секунд.';
     }
   }
-  for (const provider of ['telegram', 'vk']) $(`#${provider}-login`).addEventListener('click', () => location.assign(`/auth/${provider}/start`));
+  const providers = ['telegram', 'vk'];
+  for (const provider of providers) $(`#${provider}-login`).addEventListener('click', async () => {
+    providers.forEach(name => { $(`#${name}-login`).disabled = true; });
+    $('#login-error').hidden = true;
+    try {
+      location.assign(await window.journalStartLogin(provider));
+    } catch (error) {
+      await refresh();
+      $('#login-error').hidden = false;
+      $('#login-error').textContent = Object.hasOwn(errors, error.message) ? errors[error.message] : 'Не удалось начать вход. Попробуйте ещё раз.';
+    }
+  });
   $('#check-access').addEventListener('click', async () => {
     $('#check-access').disabled = true;
     await refresh();
@@ -55,8 +64,7 @@
   $('#logout-pending').addEventListener('click', async () => {
     $('#logout-pending').disabled = true;
     try {
-      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': current.csrf } });
-      if (!response.ok) throw new Error();
+      await window.journalLogout(current.csrf);
       location.replace('/login');
     } catch { $('#logout-pending').disabled = false; $('#pending-error').hidden = false; $('#pending-error').textContent = 'Не удалось выйти. Попробуйте ещё раз.'; }
   });

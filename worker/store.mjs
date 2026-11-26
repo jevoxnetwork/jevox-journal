@@ -1,5 +1,5 @@
 import { staffPositions, canAssignPosition, canEditMember, canDiscipline, canManageManuals, isSanctionImmune } from './staff-positions.mjs';
-import { hash, now, randomToken } from './security.mjs';
+import { hash, isSessionToken, now, randomToken } from './security.mjs';
 
 export class Store {
   constructor(db) { if (!db) throw new Error('DATABASE_UNAVAILABLE'); this.db = db; }
@@ -14,12 +14,13 @@ export class Store {
       .bind(id, (window + 1) * seconds).first();
     return result.attempts <= max;
   }
-  async saveFlow(provider, browser, flow) {
-    await this.db.prepare('INSERT INTO auth_flows (state_hash,browser_hash,provider,verifier,nonce,expires_at) VALUES (?,?,?,?,?,?)')
-      .bind(await hash(flow.state), await hash(browser), provider, flow.verifier, flow.nonce, now() + 600).run();
+  async saveFlow(provider, browser, flow, device) {
+    const [stateHash, browserHash, deviceHash] = await Promise.all([hash(flow.state), hash(browser), hash(device)]);
+    await this.db.prepare('INSERT INTO journal_browser_flows (state_hash,browser_hash,provider,verifier,nonce,expires_at,device_hash) VALUES (?,?,?,?,?,?,?)')
+      .bind(stateHash, browserHash, provider, flow.verifier, flow.nonce, now() + 600, deviceHash).run();
   }
   async consumeFlow(provider, browser, state) {
-    return this.db.prepare('DELETE FROM auth_flows WHERE state_hash=? AND browser_hash=? AND provider=? AND expires_at>? RETURNING verifier,nonce')
+    return this.db.prepare('DELETE FROM journal_browser_flows WHERE state_hash=? AND browser_hash=? AND provider=? AND expires_at>? RETURNING verifier,nonce,device_hash')
       .bind(await hash(state), await hash(browser), provider, now()).first();
   }
   async upsertUser(identity, config) {
@@ -34,28 +35,27 @@ export class Store {
       .bind(crypto.randomUUID(), identity.provider, identity.subject, identity.providerId, identity.displayName, identity.username || '', '', allowed ? 'active' : 'pending', now(), now()).run();
     return this.db.prepare('SELECT * FROM auth_users WHERE provider=? AND subject=?').bind(identity.provider, identity.subject).first();
   }
-  async createSession(userId, oldToken) {
-    const token = randomToken(), csrf = randomToken();
-    const queries = [];
-    if (oldToken) queries.push(this.db.prepare('DELETE FROM auth_sessions WHERE token_hash=?').bind(await hash(oldToken)));
-    queries.push(this.db.prepare('INSERT INTO auth_sessions (token_hash,user_id,csrf,created_at,expires_at) VALUES (?,?,?,?,?)')
-      .bind(await hash(token), userId, csrf, now(), now() + 604800));
-    await this.db.batch(queries);
+  async createSession(userId, deviceHash) {
+    if (!isSessionToken(deviceHash)) throw new Error('INVALID_DEVICE_HASH');
+    const token = randomToken(), csrf = randomToken(), createdAt = now();
+    await this.db.prepare('INSERT INTO journal_browser_sessions (token_hash,user_id,csrf,created_at,expires_at,device_hash) VALUES (?,?,?,?,?,?)')
+      .bind(await hash(token), userId, csrf, createdAt, createdAt + 604800, deviceHash).run();
     return { token, csrf };
   }
-  async session(token) {
-    if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-    return this.db.prepare(`SELECT u.*,s.csrf,s.token_hash,s.expires_at,m.nickname AS journal_nickname,m.position AS journal_position,m.staff_since AS journal_staff_since,m.profile_banner AS journal_profile_banner,m.id AS journal_moderator_id FROM auth_sessions s
-      JOIN auth_users u ON u.id=s.user_id LEFT JOIN moderators m ON (u.provider='vk' AND u.provider_id=m.vk_id) OR (u.provider='telegram' AND u.provider_id=m.telegram_id) WHERE s.token_hash=? AND s.expires_at>?`)
-      .bind(await hash(token), now()).first();
+  async session(token, device) {
+    if (!isSessionToken(token) || !isSessionToken(device)) return null;
+    const [tokenHash, deviceHash] = await Promise.all([hash(token), hash(device)]);
+    return this.db.prepare(`SELECT u.*,s.csrf,s.token_hash,s.expires_at,m.nickname AS journal_nickname,m.position AS journal_position,m.staff_since AS journal_staff_since,m.profile_banner AS journal_profile_banner,m.id AS journal_moderator_id FROM journal_browser_sessions s
+      JOIN auth_users u ON u.id=s.user_id LEFT JOIN moderators m ON (u.provider='vk' AND u.provider_id=m.vk_id) OR (u.provider='telegram' AND u.provider_id=m.telegram_id) WHERE s.token_hash=? AND s.device_hash=? AND s.expires_at>?`)
+      .bind(tokenHash, deviceHash, now()).first();
   }
   async logout(token) {
-    if (token) await this.db.prepare('DELETE FROM auth_sessions WHERE token_hash=?').bind(await hash(token)).run();
+    if (token) await this.db.prepare('DELETE FROM journal_browser_sessions WHERE token_hash=?').bind(await hash(token)).run();
   }
   async cleanup() {
     await this.db.batch([
-      this.db.prepare('DELETE FROM auth_flows WHERE expires_at<=?').bind(now()),
-      this.db.prepare('DELETE FROM auth_sessions WHERE expires_at<=?').bind(now()),
+      this.db.prepare('DELETE FROM journal_browser_flows WHERE expires_at<=?').bind(now()),
+      this.db.prepare('DELETE FROM journal_browser_sessions WHERE expires_at<=?').bind(now()),
       this.db.prepare('DELETE FROM auth_rate_limits WHERE expires_at<=?').bind(now()),
     ]);
   }
@@ -91,7 +91,7 @@ export class Store {
     if(removed.some(([p,before])=>(actor.provider===p&&actor.provider_id===before))) return 'protected';
     const statements=[];
     for(const [provider,providerId] of removed){
-      statements.push(this.db.prepare("DELETE FROM auth_sessions WHERE user_id IN (SELECT id FROM auth_users WHERE provider=? AND provider_id=?)").bind(provider,providerId));
+      statements.push(this.db.prepare("DELETE FROM journal_browser_sessions WHERE user_id IN (SELECT id FROM auth_users WHERE provider=? AND provider_id=?)").bind(provider,providerId));
       statements.push(this.db.prepare("UPDATE auth_users SET status=CASE WHEN status='active' THEN 'pending' ELSE status END WHERE provider=? AND provider_id=?").bind(provider,providerId));
     }
     statements.push(this.db.prepare('UPDATE moderators SET nickname=?,position=?,real_name=?,birth_date=?,vk_id=?,telegram_id=?,appointment_date=?,staff_since=?,discord_id=? WHERE id=?').bind(m.nickname,m.position,m.realName,m.birthDate,m.vkId||null,m.telegramId||null,m.appointmentDate===undefined?(m.position===old.position?old.appointment_date:new Date().toISOString().slice(0,10)):(m.appointmentDate||null),m.staffSince===undefined?old.staff_since:(m.staffSince||null),m.discordId===undefined?old.discord_id:(m.discordId||null),id));
@@ -133,7 +133,7 @@ export class Store {
     const archiveId=crypto.randomUUID(),removedAt=now(),actorName=actor.journal_nickname||actor.display_name||'Администратор';
     const result=await this.db.batch([
       this.db.prepare(`INSERT INTO former_moderators (id,source_id,nickname,position,real_name,birth_date,appointment_date,staff_since,vk_id,telegram_id,joined_at,removed_at,removed_by,removed_by_name,removal_reason,profile_banner,discord_id) SELECT ?,m.id,m.nickname,m.position,m.real_name,m.birth_date,m.appointment_date,m.staff_since,m.vk_id,m.telegram_id,m.created_at,?,?,?,?,m.profile_banner,m.discord_id FROM moderators m WHERE m.id=?`).bind(archiveId,removedAt,actor.id,actorName,reason,id),
-      this.db.prepare("DELETE FROM auth_sessions WHERE user_id IN (SELECT u.id FROM auth_users u JOIN moderators m ON ((u.provider='vk' AND u.provider_id=m.vk_id) OR (u.provider='telegram' AND u.provider_id=m.telegram_id)) WHERE m.id=?)").bind(id),
+      this.db.prepare("DELETE FROM journal_browser_sessions WHERE user_id IN (SELECT u.id FROM auth_users u JOIN moderators m ON ((u.provider='vk' AND u.provider_id=m.vk_id) OR (u.provider='telegram' AND u.provider_id=m.telegram_id)) WHERE m.id=?)").bind(id),
       this.db.prepare("UPDATE auth_users SET status=CASE WHEN status='blocked' THEN 'blocked' ELSE 'removed' END WHERE EXISTS (SELECT 1 FROM moderators m WHERE m.id=? AND ((auth_users.provider='vk' AND auth_users.provider_id=m.vk_id) OR (auth_users.provider='telegram' AND auth_users.provider_id=m.telegram_id)))").bind(id),
       this.db.prepare('DELETE FROM moderators WHERE id=?').bind(id),
       this.db.prepare('INSERT INTO auth_audit (id,actor_id,action,target_id,created_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM former_moderators WHERE id=?)').bind(crypto.randomUUID(),actor.id,'moderator_removed',id,removedAt,archiveId)

@@ -3,38 +3,50 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createHandler } from '../worker/app.mjs';
-import { hash, now } from '../worker/security.mjs';
+import { hash, now, randomToken } from '../worker/security.mjs';
 
 function d1() {
   const raw=new DatabaseSync(':memory:');raw.exec('PRAGMA foreign_keys=ON');
   for(const file of readdirSync(new URL('../drizzle/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())raw.exec(readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
   return {raw,prepare(sql){let args=[];return {bind(...values){args=values;return this},async first(){return raw.prepare(sql).get(...args)||null},async all(){return {results:raw.prepare(sql).all(...args)}},async run(){return raw.prepare(sql).run(...args)}}},async batch(statements){raw.exec('BEGIN');try{const result=[];for(const s of statements)result.push(await s.run());raw.exec('COMMIT');return result}catch(e){raw.exec('ROLLBACK');throw e}}};
 }
+const device = randomToken();
+const deviceHash = await hash(device);
 const asset=text=>({data:Buffer.from(text).toString('base64'),type:'text/html; charset=utf-8'});
 function setup({admin=false,identityId='42',position}={}){
  const DB=d1();const env={PUBLIC_URL:'https://journal.example',TELEGRAM_CLIENT_ID:'123',TELEGRAM_CLIENT_SECRET:'test-secret',VK_CLIENT_ID:'456',DB,...(admin?{ADMIN_TELEGRAM_IDS:'42'}:{})};
  if(position) DB.raw.prepare("INSERT INTO moderators (id,nickname,position,real_name,birth_date,telegram_id,created_at,created_by) VALUES (?,?,?,?,?,?,?,?)").run("actor","User <test>",position,"Test Name","2000-01-01",identityId,now(),"test");
  let called=0;
  const handler=createHandler({'/login.html':asset('LOGIN'),'/journal.html':asset(readFileSync(new URL('../dist/index.html',import.meta.url),'utf8')),'/app.js':asset('protected')},{exchangeIdentity:async(config,provider,flow,callback)=>{called++;assert.ok(flow.verifier.length>=43);assert.ok(flow.nonce.length>=43);assert.ok(callback.code);return {provider,subject:'subject-'+identityId,providerId:identityId,displayName:'User <test>',username:''}}});
- const wait=[];const request=(path,options={})=>handler(new Request('https://journal.example'+path,options),env,{waitUntil:p=>wait.push(p)});
- return {env,DB,request,get called(){return called},async close(){await Promise.all(wait);DB.raw.close()}};
+ const wait=[];
+ const rawRequest=(path,options={})=>handler(new Request('https://journal.example'+path,options),env,{waitUntil:p=>wait.push(p)});
+ const request=(path,options={})=>{
+  const headers=new Headers(options.headers);
+  if(headers.get('cookie')?.includes('journal_session=') && !headers.has('X-Journal-Device')) headers.set('X-Journal-Device',device);
+  return rawRequest(path,{...options,headers});
+ };
+ return {env,DB,request,rawRequest,get called(){return called},async close(){await Promise.all(wait);DB.raw.close()}};
 }
-async function start(f,provider='telegram'){
- const response=await f.request(`/auth/${provider}/start`);assert.equal(response.status,302);
- return {state:new URL(response.headers.get('location')).searchParams.get('state'),flowCookie:response.headers.get('set-cookie').split(';')[0],response};
+function startRequest(f, provider='telegram', browserDevice=device){
+ return f.rawRequest(`/auth/${provider}/start`, {method:'POST',headers:{Origin:f.env.PUBLIC_URL,'X-Journal-Device':browserDevice}});
 }
-async function login(f){const flow=await start(f);const response=await f.request(`/auth/telegram/callback?code=valid&state=${flow.state}`,{headers:{Cookie:flow.flowCookie}});return {...flow,response,sessionCookie:response.headers.get('set-cookie')?.split(';')[0]}}
+async function start(f,provider='telegram',browserDevice=device){
+ const response=await startRequest(f,provider,browserDevice);assert.equal(response.status,200);
+ const url=new URL((await response.json()).url);
+ return {url,state:url.searchParams.get('state'),flowCookie:response.headers.get('set-cookie').split(';')[0],response};
+}
+async function login(f,browserDevice=device){const flow=await start(f,'telegram',browserDevice);const response=await f.request(`/auth/telegram/callback?code=valid&state=${flow.state}`,{headers:{Cookie:flow.flowCookie}});return {...flow,response,sessionCookie:response.headers.get('set-cookie')?.split(';')[0]}}
 
-test('Anonymous visitors only receive the login page; private assets and paths stay protected',async()=>{
+test('Anonymous visitors receive the login page and cannot read private data or internal files',async()=>{
  const f=setup();try{
- assert.equal(await (await f.request('/')).text(),'LOGIN');assert.equal((await f.request('/journal')).headers.get('location'),'/login');assert.equal((await f.request('/app.js')).status,401);
+ assert.equal(await (await f.request('/')).text(),'LOGIN');assert.equal((await f.request('/journal')).headers.get('location'),'/login');assert.equal((await f.request('/app.js')).status,200);
  for(const path of ['/.env','/journal.html','/dist/index.html','/server/index.js'])assert.equal((await f.request(path)).status,404);
  assert.deepEqual((await (await f.request('/api/auth/session')).json()).user,null);
  assert.equal((await f.request('/api/admin/moderators')).status,403);
  }finally{await f.close()}
 });
 test('Authorization uses S256, server-held verifier, state and a secure browser-binding cookie',async()=>{
- const f=setup();try{const flow=await start(f);const url=new URL(flow.response.headers.get('location'));assert.equal(url.origin,'https://oauth.telegram.org');assert.equal(url.searchParams.get('scope'),'openid profile');assert.equal(url.searchParams.get('code_challenge_method'),'S256');assert.equal(url.searchParams.get('code_verifier'),null);const saved=f.DB.raw.prepare('SELECT * FROM auth_flows').get();assert.equal(url.searchParams.get('code_challenge'),await hash(saved.verifier));assert.equal(url.searchParams.get('nonce'),null);assert.match(flow.response.headers.get('set-cookie'),/HttpOnly/);assert.match(flow.response.headers.get('set-cookie'),/Secure/);assert.match(flow.response.headers.get('set-cookie'),/SameSite=Lax/)}finally{await f.close()}
+ const f=setup();try{const flow=await start(f);const url=flow.url;assert.equal(url.origin,'https://oauth.telegram.org');assert.equal(url.searchParams.get('scope'),'openid profile');assert.equal(url.searchParams.get('code_challenge_method'),'S256');assert.equal(url.searchParams.get('code_verifier'),null);const saved=f.DB.raw.prepare('SELECT * FROM journal_browser_flows').get();assert.equal(url.searchParams.get('code_challenge'),await hash(saved.verifier));assert.equal(url.searchParams.get('nonce'),null);assert.match(flow.response.headers.get('set-cookie'),/HttpOnly/);assert.match(flow.response.headers.get('set-cookie'),/Secure/);assert.match(flow.response.headers.get('set-cookie'),/SameSite=Lax/)}finally{await f.close()}
 });
 test('Cross-browser, cross-provider, expired and replayed callbacks cannot create sessions',async()=>{
  const f=setup();try{const flow=await start(f);
@@ -43,24 +55,56 @@ test('Cross-browser, cross-provider, expired and replayed callbacks cannot creat
  assert.equal(f.called,0);
  const valid=await f.request(`/auth/telegram/callback?code=x&state=${flow.state}`,{headers:{Cookie:flow.flowCookie}});assert.ok(valid.headers.get('set-cookie'));
  assert.match((await f.request(`/auth/telegram/callback?code=x&state=${flow.state}`,{headers:{Cookie:flow.flowCookie}})).headers.get('location'),/expired/);assert.equal(f.called,1);
- const expired=await start(f);f.DB.raw.exec('UPDATE auth_flows SET expires_at=0');assert.match((await f.request(`/auth/telegram/callback?code=x&state=${expired.state}`,{headers:{Cookie:expired.flowCookie}})).headers.get('location'),/expired/);
+ const expired=await start(f);f.DB.raw.exec('UPDATE journal_browser_flows SET expires_at=0');assert.match((await f.request(`/auth/telegram/callback?code=x&state=${expired.state}`,{headers:{Cookie:expired.flowCookie}})).headers.get('location'),/expired/);
  }finally{await f.close()}
 });
 test('Social identity alone does not grant moderation privileges; first user remains pending',async()=>{
- const f=setup();try{const l=await login(f);const me=await (await f.request('/api/auth/session',{headers:{Cookie:l.sessionCookie}})).json();assert.equal(me.user.status,'pending');assert.equal(me.user.role,undefined);assert.equal((await f.request('/app.js',{headers:{Cookie:l.sessionCookie}})).status,403);assert.equal((await f.request('/api/admin/moderators',{headers:{Cookie:l.sessionCookie}})).status,403);
- const rawToken=l.sessionCookie.split('=')[1],row=f.DB.raw.prepare('SELECT token_hash FROM auth_sessions').get();assert.notEqual(row.token_hash,rawToken);assert.equal(row.token_hash,await hash(rawToken));
+ const f=setup();try{const l=await login(f);const me=await (await f.request('/api/auth/session',{headers:{Cookie:l.sessionCookie}})).json();assert.equal(me.user.status,'pending');assert.equal(me.user.role,undefined);assert.equal((await f.request('/api/admin/moderators',{headers:{Cookie:l.sessionCookie}})).status,403);
+ const rawToken=l.sessionCookie.split('=')[1],row=f.DB.raw.prepare('SELECT token_hash,device_hash FROM journal_browser_sessions').get();assert.notEqual(row.token_hash,rawToken);assert.equal(row.token_hash,await hash(rawToken));assert.equal(row.device_hash,deviceHash);assert.notEqual(row.device_hash,device);
  }finally{await f.close()}
 });
-test('Approved administrator can enter; JSON bootstrap is escaped; logout enforces CSRF and revokes session',async()=>{
- const f=setup({admin:true});try{const l=await login(f);const headers={Cookie:l.sessionCookie};const me=await (await f.request('/api/auth/session',{headers})).json();assert.equal(me.user.status,'active');assert.equal(me.user.role,undefined);const journal=await f.request('/journal',{headers});const html=await journal.text();assert.match(html,/auth-session/);assert.ok(!html.includes('User <test>'));assert.match(html, /class="profile-name">User &lt;test&gt;<\/strong>/);assert.match(html, /class="avatar" aria-hidden="true">US<\/span>/);assert.match(html,/\\u003c/);assert.equal((await f.request('/app.js',{headers})).status,200);
+test('Approved administrator can enter; the HTML shell contains no personal data; logout requires CSRF',async()=>{
+ const f=setup({admin:true});try{const l=await login(f);const headers={Cookie:l.sessionCookie};const me=await (await f.request('/api/auth/session',{headers})).json();assert.equal(me.user.status,'active');assert.equal(me.user.role,undefined);const journal=await f.request('/journal',{headers});const html=await journal.text();assert.match(html,/id="auth-session" type="application\/json"><\/script>/);assert.ok(!html.includes('User'));assert.ok(!html.includes(me.csrf));
  assert.equal((await f.request('/api/auth/logout',{method:'POST',headers})).status,403);
  assert.equal((await f.request('/api/auth/logout',{method:'POST',headers:{...headers,Origin:'https://evil.example','X-CSRF-Token':me.csrf}})).status,403);
  assert.equal((await f.request('/api/auth/logout',{method:'POST',headers:{...headers,Origin:f.env.PUBLIC_URL,'X-CSRF-Token':me.csrf}})).status,200);
  assert.equal((await (await f.request('/api/auth/session',{headers})).json()).user,null);
  }finally{await f.close()}
 });
-test('Sessions expire, blocked accounts lose access, and browser sessions survive handler restarts',async()=>{
- const f=setup({admin:true});try{const l=await login(f);const headers={Cookie:l.sessionCookie};assert.equal((await f.request('/app.js',{headers})).status,200);f.DB.raw.exec("UPDATE auth_users SET status='blocked'");assert.equal((await f.request('/app.js',{headers})).status,403);f.DB.raw.exec("UPDATE auth_users SET status='active'; UPDATE auth_sessions SET expires_at=0");assert.equal((await f.request('/app.js',{headers})).status,401)}finally{await f.close()}
+test('Cookie replay, a different browser key, and duplicate session cookies cannot access the journal API',async()=>{
+ const f=setup({admin:true,position:'Владелец'});
+ try {
+  const otherDevice=randomToken();
+  const first=await login(f),second=await login(f,otherDevice);
+  const cookieOnly={Cookie:second.sessionCookie};
+  const good={...cookieOnly,'X-Journal-Device':otherDevice};
+  const wrong={...cookieOnly,'X-Journal-Device':device};
+  const duplicate={...good,Cookie:`${second.sessionCookie}; ${first.sessionCookie}`};
+  const session=async headers=>(await (await f.rawRequest('/api/auth/session',{headers})).json()).user;
+  assert.equal((await session(good)).status,'active');
+  for(const headers of [cookieOnly,wrong,duplicate,{Cookie:first.sessionCookie,'X-Journal-Device':otherDevice}]){
+   assert.equal(await session(headers),null);
+   for(const path of ['/api/admin/moderators','/api/manual-images/9f098641-36fb-4508-8e85-10fe0f5ac079']){
+    assert.equal((await f.rawRequest(path,{headers})).status,403);
+   }
+  }
+  assert.equal((await f.rawRequest('/api/admin/moderators',{headers:good})).status,200);
+  assert.equal((await f.rawRequest('/api/auth/logout',{method:'POST',headers:{...cookieOnly,Origin:f.env.PUBLIC_URL}})).status,401);
+  assert.equal((await session(good)).status,'active');
+  assert.throws(()=>f.DB.raw.exec("INSERT INTO auth_sessions SELECT token_hash,user_id,csrf,created_at,expires_at FROM journal_browser_sessions"),/Legacy session authentication is disabled/);
+  assert.throws(()=>f.DB.raw.exec("INSERT INTO auth_flows SELECT state_hash,browser_hash,provider,verifier,nonce,expires_at FROM journal_browser_flows UNION ALL SELECT 'test','test','telegram','test','test',0"),/Legacy session authentication is disabled/);
+ }finally{await f.close()}
+});
+test('Sessions expire and blocked accounts lose access',async()=>{
+ const f=setup({admin:true});try{
+  const l=await login(f);const headers={Cookie:l.sessionCookie};
+  const status=async()=>(await f.request('/api/staff',{headers})).status;
+  assert.equal(await status(),200);
+  f.DB.raw.exec("UPDATE auth_users SET status='blocked'");
+  assert.equal(await status(),403);
+  f.DB.raw.exec("UPDATE auth_users SET status='active'; UPDATE journal_browser_sessions SET expires_at=0");
+  assert.equal(await status(),403);
+ }finally{await f.close()}
 });
 test('Legacy journal roles do not grant access and their write endpoints were removed',async()=>{
  const f=setup({admin:true});
@@ -76,8 +120,19 @@ test('Legacy journal roles do not grant access and their write endpoints were re
   }
  }finally{await f.close()}
 });
-test('Missing provider settings stay disabled, and repeated attempts are limited',async()=>{
- const f=setup();try{f.env.TELEGRAM_CLIENT_SECRET='';assert.match((await f.request('/auth/telegram/start')).headers.get('location'),/not_configured/);assert.equal((await (await f.request('/api/auth/session')).json()).providers.telegram,false);f.env.TELEGRAM_CLIENT_SECRET='test';for(let i=0;i<30;i++)assert.ok(!(await f.request('/auth/telegram/start')).headers.get('location').includes('rate_limit'));assert.match((await f.request('/auth/telegram/start')).headers.get('location'),/rate_limit/)}finally{await f.close()}
+test('Login initiation requires same-origin POST and a browser key; provider settings and rate limits still apply',async()=>{
+ const f=setup();try{
+  const path='/auth/telegram/start';
+  assert.equal((await f.rawRequest(path)).status,404);
+  assert.equal((await f.rawRequest(path,{method:'POST',headers:{Origin:f.env.PUBLIC_URL}})).status,403);
+  assert.equal((await f.rawRequest(path,{method:'POST',headers:{Origin:'https://another.example','X-Journal-Device':device}})).status,403);
+  f.env.TELEGRAM_CLIENT_SECRET='';
+  assert.equal((await (await startRequest(f)).json()).error,'not_configured');
+  assert.equal((await (await f.request('/api/auth/session')).json()).providers.telegram,false);
+  f.env.TELEGRAM_CLIENT_SECRET='test';
+  for(let i=0;i<30;i++)assert.equal((await startRequest(f)).status,200);
+  assert.equal((await startRequest(f)).status,429);
+ }finally{await f.close()}
 });
 import { Store } from '../worker/store.mjs';
 
@@ -98,7 +153,7 @@ test('Roster creation checks management access, validates identities and keeps p
 
  const store=new Store(f.DB),config={admins:{vk:new Set(),telegram:new Set()},staff:{vk:new Set(),telegram:new Set()}};
  const user=await store.upsertUser({provider:'telegram',subject:'new',providerId:'88',displayName:'Social'},config);assert.equal(user.status,'active');assert.equal(user.role,'moderator');
- const newSession=await store.createSession(user.id);assert.equal((await store.session(newSession.token)).journal_nickname,'Player_123');
+ const newSession=await store.createSession(user.id,deviceHash);assert.equal((await store.session(newSession.token,device)).journal_nickname,'Player_123');
  }finally{await f.close()}
 });
 test('Manuals require admin to write and remain readable for active moderators',async()=>{
@@ -147,9 +202,9 @@ test('Removing moderator archives details, revokes sessions, and permits deliber
  f.DB.raw.prepare('INSERT INTO auth_users VALUES (?,?,?,?,?,?,?,?,?,?,?)').run('other','vk','other','77','Other','','','moderator','pending',now(),now());
  assert.equal((await f.request('/api/admin/moderators',{method:'POST',headers:post,body:JSON.stringify(data)})).status,201);
  const list=await(await f.request('/api/admin/moderators',{headers})).json(),id=list.moderators.find(member=>member.id!=='actor').id;assert.equal(list.moderators.find(member=>member.id!=='actor').appointment_date,'2025-01-02');
- const store=new Store(f.DB),otherSession=await store.createSession('other');assert.equal((await store.session(otherSession.token)).status,'active');
+ const store=new Store(f.DB),otherSession=await store.createSession('other',deviceHash);assert.equal((await store.session(otherSession.token,device)).status,'active');
  const remove=`/api/admin/moderators/${id}/remove`;assert.equal((await f.request(remove,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{}'})).status,403);
- assert.equal((await f.request(remove,{method:'POST',headers:post,body:JSON.stringify({reason:'Причина снятия'})})).status,200);assert.equal(await store.session(otherSession.token),null);
+ assert.equal((await f.request(remove,{method:'POST',headers:post,body:JSON.stringify({reason:'Причина снятия'})})).status,200);assert.equal(await store.session(otherSession.token,device),null);
  assert.equal(f.DB.raw.prepare('SELECT status FROM auth_users WHERE id=?').get('other').status,'removed');assert.equal((await(await f.request('/api/admin/moderators',{headers})).json()).moderators.length,1);
  const archive=(await(await f.request('/api/admin/former-moderators',{headers})).json()).moderators;assert.equal(archive.length,1);assert.equal(archive[0].appointment_date,'2025-01-02');assert.equal(archive[0].removed_by_name,'User <test>');assert.equal(archive[0].position,'Менеджер');assert.equal(archive[0].removal_reason,'Причина снятия');assert.equal((await f.request('/api/admin/former-moderators')).status,403);
  const config={admins:{vk:new Set(),telegram:new Set()},staff:{vk:new Set(),telegram:new Set(['88'])}};assert.equal((await store.upsertUser({provider:'telegram',providerId:'88',subject:'other',displayName:'Other'},config)).status,'blocked');
@@ -201,7 +256,7 @@ test('Position change creates a private notification, which can be marked read',
   assert.deepEqual(ownerData.notifications,[]);
   const store=new Store(f.DB);
   const other=await store.upsertUser({provider:'telegram',providerId:'88',subject:'other',displayName:'Other'},{admins:{telegram:new Set()},staff:{telegram:new Set()}});
-  const session=await store.createSession(other.id);
+  const session=await store.createSession(other.id,deviceHash);
   const otherHeaders={Cookie:`__Host-journal_session=${session.token}`};
   const getNotes=async()=> (await (await f.request('/api/notifications',{headers:otherHeaders})).json()).notifications;
   const notes=await getNotes();
@@ -242,7 +297,7 @@ test('Managers manage staff warnings and reprimands; counts are private and surv
  f.DB.raw.prepare('UPDATE moderators SET nickname=?,position=?,staff_since=? WHERE id=?').run(curator.nickname,curator.position,curator.staffSince,'actor');
  const moderators=(await(await f.request('/api/admin/moderators',{headers:adminHeaders})).json()).moderators,targetId=moderators.find(x=>x.nickname==='Staffer').id;
  let session=await(await f.request('/api/auth/session',{headers:adminHeaders})).json();assert.equal(session.user.position,'Менеджер');assert.equal(session.user.staffSince,'2023-06-02');
- const store=new Store(f.DB),other=await store.createSession('target'),otherHeaders={Cookie:`${f.env.PUBLIC_URL.startsWith('https:')?'__Host-journal_session':'journal_session'}=${other.token}`},otherPost={...otherHeaders,Origin:f.env.PUBLIC_URL,'X-CSRF-Token':other.csrf,'Content-Type':'application/json'};
+ const store=new Store(f.DB),other=await store.createSession('target',deviceHash),otherHeaders={Cookie:`${f.env.PUBLIC_URL.startsWith('https:')?'__Host-journal_session':'journal_session'}=${other.token}`},otherPost={...otherHeaders,Origin:f.env.PUBLIC_URL,'X-CSRF-Token':other.csrf,'Content-Type':'application/json'};
 
  assert.equal((await f.request('/api/staff-sanctions',{headers:otherHeaders})).status,403);assert.equal((await f.request('/api/staff-sanctions',{method:'POST',headers:otherPost,body:JSON.stringify({moderatorId:targetId,type:'warning',reason:'Причина'})})).status,403);
  assert.equal((await f.request('/api/staff-sanctions',{method:'POST',headers:post,body:JSON.stringify({moderatorId:targetId,type:'warning',reason:'Опоздание'})})).status,201);
@@ -250,7 +305,7 @@ test('Managers manage staff warnings and reprimands; counts are private and surv
  assert.deepEqual((await(await f.request('/api/me/sanctions',{headers:otherHeaders})).json()).sanctions,{warnings:1,reprimands:1});assert.equal((await(await f.request('/api/notifications',{headers:otherHeaders})).json()).notifications.length,2);
  const all=(await(await f.request('/api/staff-sanctions',{headers:adminHeaders})).json()).sanctions;const warning=all.find(x=>x.type==='warning');assert.equal((await f.request(`/api/staff-sanctions/${warning.id}/revoke`,{method:'POST',headers:post,body:'{}'})).status,200);assert.deepEqual((await(await f.request('/api/me/sanctions',{headers:otherHeaders})).json()).sanctions,{warnings:0,reprimands:1});
  assert.equal((await f.request(`/api/admin/moderators/${targetId}/remove`,{method:'POST',headers:post,body:JSON.stringify({reason:'Ушёл'})})).status,200);const former=(await(await f.request('/api/admin/former-moderators',{headers:adminHeaders})).json()).moderators[0];assert.equal(former.staff_since,'2024-08-05');assert.equal((await f.request(`/api/admin/former-moderators/${former.id}/restore`,{method:'POST',headers:post,body:'{}'})).status,200);
- const reauth=await store.createSession('target'),targetHeaders={Cookie:`__Host-journal_session=${reauth.token}`};assert.deepEqual((await(await f.request('/api/me/sanctions',{headers:targetHeaders})).json()).sanctions,{warnings:0,reprimands:1});assert.equal((await(await f.request('/api/auth/session',{headers:targetHeaders})).json()).user.staffSince,'2024-08-05');
+ const reauth=await store.createSession('target',deviceHash),targetHeaders={Cookie:`__Host-journal_session=${reauth.token}`};assert.deepEqual((await(await f.request('/api/me/sanctions',{headers:targetHeaders})).json()).sanctions,{warnings:0,reprimands:1});assert.equal((await(await f.request('/api/auth/session',{headers:targetHeaders})).json()).user.staffSince,'2024-08-05');
  }finally{await f.close()}
 });
 
@@ -346,7 +401,7 @@ test('Staff controls separate monthly activity, personal notifications, position
   const month=Date.UTC(localMonth.getUTCFullYear(),localMonth.getUTCMonth(),1)-10800000;
   f.DB.raw.prepare("INSERT INTO moderators (id,nickname,position,real_name,birth_date,telegram_id,created_at,created_by) VALUES ('member','TestMember','Спектатор','Name','2000-01-01','88',1,'test')").run();
   f.DB.raw.prepare('INSERT INTO auth_users VALUES (?,?,?,?,?,?,?,?,?,?,?)').run('staff-user','telegram','sub','88','Name','','','moderator','active',now(),now());
-  const session=await new Store(f.DB).createSession('staff-user');
+  const session=await new Store(f.DB).createSession('staff-user',deviceHash);
   const member={Cookie:`__Host-journal_session=${session.token}`};
   const bodyHeaders={Origin:f.env.PUBLIC_URL,'Content-Type':'application/json'};
   const post=(path,body,headers=owner,token=csrf)=>f.request(path,{method:'POST',headers:{...headers,...bodyHeaders,'X-CSRF-Token':token},body:JSON.stringify(body)});
