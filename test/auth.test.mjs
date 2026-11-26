@@ -102,10 +102,18 @@ test('Sessions expire and blocked accounts lose access',async()=>{
  const f=setup({admin:true});try{
   const l=await login(f);const headers={Cookie:l.sessionCookie};
   const status=async()=>(await f.request('/api/staff',{headers})).status;
+  assert.match(l.response.headers.get('set-cookie'),/; Max-Age=259200(?:;|$)/);
+  assert.equal(f.DB.raw.prepare('SELECT expires_at-created_at AS lifetime FROM journal_browser_sessions').get().lifetime,259200);
   assert.equal(await status(),200);
   f.DB.raw.exec("UPDATE auth_users SET status='blocked'");
   assert.equal(await status(),403);
   f.DB.raw.exec("UPDATE auth_users SET status='active'; UPDATE journal_browser_sessions SET expires_at=0");
+  assert.equal(await status(),403);
+  const currentTime=now();
+  const setLegacySession=f.DB.raw.prepare('UPDATE journal_browser_sessions SET created_at=?,expires_at=?');
+  setLegacySession.run(currentTime-259200+60,currentTime+345600);
+  assert.equal(await status(),200);
+  setLegacySession.run(currentTime-259200,currentTime+345600);
   assert.equal(await status(),403);
  }finally{await f.close()}
 });

@@ -1,5 +1,5 @@
 import { staffPositions, canAssignPosition, canEditMember, canDiscipline, canManageManuals, isSanctionImmune } from './staff-positions.mjs';
-import { hash, isSessionToken, now, randomToken } from './security.mjs';
+import { SESSION_LIFETIME_SECONDS, hash, isSessionToken, now, randomToken } from './security.mjs';
 
 export class Store {
   constructor(db) { if (!db) throw new Error('DATABASE_UNAVAILABLE'); this.db = db; }
@@ -39,24 +39,27 @@ export class Store {
     if (!isSessionToken(deviceHash)) throw new Error('INVALID_DEVICE_HASH');
     const token = randomToken(), csrf = randomToken(), createdAt = now();
     await this.db.prepare('INSERT INTO journal_browser_sessions (token_hash,user_id,csrf,created_at,expires_at,device_hash) VALUES (?,?,?,?,?,?)')
-      .bind(await hash(token), userId, csrf, createdAt, createdAt + 604800, deviceHash).run();
+      .bind(await hash(token), userId, csrf, createdAt, createdAt + SESSION_LIFETIME_SECONDS, deviceHash).run();
     return { token, csrf };
   }
   async session(token, device) {
     if (!isSessionToken(token) || !isSessionToken(device)) return null;
     const [tokenHash, deviceHash] = await Promise.all([hash(token), hash(device)]);
+    const currentTime = now();
     return this.db.prepare(`SELECT u.*,s.csrf,s.token_hash,s.expires_at,m.nickname AS journal_nickname,m.position AS journal_position,m.staff_since AS journal_staff_since,m.profile_banner AS journal_profile_banner,m.id AS journal_moderator_id FROM journal_browser_sessions s
-      JOIN auth_users u ON u.id=s.user_id LEFT JOIN moderators m ON (u.provider='vk' AND u.provider_id=m.vk_id) OR (u.provider='telegram' AND u.provider_id=m.telegram_id) WHERE s.token_hash=? AND s.device_hash=? AND s.expires_at>?`)
-      .bind(tokenHash, deviceHash, now()).first();
+      JOIN auth_users u ON u.id=s.user_id LEFT JOIN moderators m ON (u.provider='vk' AND u.provider_id=m.vk_id) OR (u.provider='telegram' AND u.provider_id=m.telegram_id) WHERE s.token_hash=? AND s.device_hash=? AND s.expires_at>? AND s.created_at>?`)
+      .bind(tokenHash, deviceHash, currentTime, currentTime - SESSION_LIFETIME_SECONDS).first();
   }
   async logout(token) {
     if (token) await this.db.prepare('DELETE FROM journal_browser_sessions WHERE token_hash=?').bind(await hash(token)).run();
   }
   async cleanup() {
+    const currentTime = now();
     await this.db.batch([
-      this.db.prepare('DELETE FROM journal_browser_flows WHERE expires_at<=?').bind(now()),
-      this.db.prepare('DELETE FROM journal_browser_sessions WHERE expires_at<=?').bind(now()),
-      this.db.prepare('DELETE FROM auth_rate_limits WHERE expires_at<=?').bind(now()),
+      this.db.prepare('DELETE FROM journal_browser_flows WHERE expires_at<=?').bind(currentTime),
+      this.db.prepare('DELETE FROM journal_browser_sessions WHERE expires_at<=? OR created_at<=?')
+        .bind(currentTime, currentTime - SESSION_LIFETIME_SECONDS),
+      this.db.prepare('DELETE FROM auth_rate_limits WHERE expires_at<=?').bind(currentTime),
     ]);
   }
   async activeStaff(search='') {

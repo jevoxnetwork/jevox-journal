@@ -1,3 +1,4 @@
+export const SESSION_LIFETIME_SECONDS = 3 * 24 * 60 * 60;
 export const isSessionToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
 export const now = () => Math.floor(Date.now() / 1000);
 export function randomToken(bytes = 32) {
@@ -42,7 +43,7 @@ function list(value) { return new Set(String(value || '').split(',').map(x => x.
 export function available(config) {
   return { telegram: /^\d+$/.test(config.telegram.id) && !!config.telegram.secret, vk: /^\d+$/.test(config.vk.id) };
 }
-export function cookie(config, name, value, seconds = 604800) {
+export function cookie(config, name, value, seconds = SESSION_LIFETIME_SECONDS) {
   return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${config.secure ? '; Secure' : ''}`;
 }
 export function json(data, status = 200) {
