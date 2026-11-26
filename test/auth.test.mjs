@@ -17,7 +17,7 @@ function setup({admin=false,identityId='42',position}={}){
  const DB=d1();const env={PUBLIC_URL:'https://journal.example',TELEGRAM_CLIENT_ID:'123',TELEGRAM_CLIENT_SECRET:'test-secret',VK_CLIENT_ID:'456',DB,...(admin?{ADMIN_TELEGRAM_IDS:'42'}:{})};
  if(position) DB.raw.prepare("INSERT INTO moderators (id,nickname,position,real_name,birth_date,telegram_id,created_at,created_by) VALUES (?,?,?,?,?,?,?,?)").run("actor","User <test>",position,"Test Name","2000-01-01",identityId,now(),"test");
  let called=0;
- const handler=createHandler({'/login.html':asset('LOGIN'),'/journal.html':asset(readFileSync(new URL('../dist/index.html',import.meta.url),'utf8')),'/app.js':asset('protected')},{exchangeIdentity:async(config,provider,flow,callback)=>{called++;assert.ok(flow.verifier.length>=43);assert.ok(flow.nonce.length>=43);assert.ok(callback.code);return {provider,subject:'subject-'+identityId,providerId:identityId,displayName:'User <test>',username:''}}});
+ const handler=createHandler({'/login.html':asset('LOGIN'),'/journal.html':asset(readFileSync(new URL('../dist/index.html',import.meta.url),'utf8')),'/assets/ui/login-test.js':asset('compiled')},{exchangeIdentity:async(config,provider,flow,callback)=>{called++;assert.ok(flow.verifier.length>=43);assert.ok(flow.nonce.length>=43);assert.ok(callback.code);return {provider,subject:'subject-'+identityId,providerId:identityId,displayName:'User <test>',username:''}}});
  const wait=[];
  const rawRequest=(path,options={})=>handler(new Request('https://journal.example'+path,options),env,{waitUntil:p=>wait.push(p)});
  const request=(path,options={})=>{
@@ -39,7 +39,10 @@ async function login(f,browserDevice=device){const flow=await start(f,'telegram'
 
 test('Anonymous visitors receive the login page and cannot read private data or internal files',async()=>{
  const f=setup();try{
- assert.equal(await (await f.request('/')).text(),'LOGIN');assert.equal((await f.request('/journal')).headers.get('location'),'/login');assert.equal((await f.request('/app.js')).status,200);
+ assert.equal(await (await f.request('/')).text(),'LOGIN');assert.equal((await f.request('/journal')).headers.get('location'),'/login');assert.equal((await f.request('/assets/ui/login-test.js')).status,200);
+ for (const name of ['app.js','account.js','auth.js','journal-entry.js','session-device.js','style.css','auth.css','assets/fonts/fonts.css','assets/ui/login-test.js.map']) {
+  assert.equal((await f.request('/'+name)).status,404,name);
+ }
  for(const path of ['/.env','/journal.html','/dist/index.html','/server/index.js'])assert.equal((await f.request(path)).status,404);
  assert.deepEqual((await (await f.request('/api/auth/session')).json()).user,null);
  assert.equal((await f.request('/api/admin/moderators')).status,403);

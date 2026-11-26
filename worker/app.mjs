@@ -118,7 +118,7 @@ export function createHandler(assetMap, dependencies = {}) {
       if(!member)return json({skin:null},404);
       return minecraftSkin(name==='cvasolir'?'lqgend':name);
     }
-    if (request.method === 'GET' && ['/style.css', '/auth.css', '/auth.js', '/account.js', '/session-device.js', '/journal-entry.js', '/app.js', '/favicon.svg'].includes(path)) return asset(assetMap, path);
+    if (request.method === 'GET' && path === '/favicon.svg') return asset(assetMap, path);
     const textureMatch=path.match(/^\/assets\/minecraft-textures\/([a-f0-9]{32,64})\.png$/);
     if(textureMatch&&request.method==='GET')return assetMap[path]?asset(assetMap,path):minecraftTexture(textureMatch[1]);
     if (request.method === 'GET' && path.startsWith('/assets/')) return asset(assetMap, path);

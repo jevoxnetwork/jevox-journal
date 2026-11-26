@@ -1,3 +1,5 @@
+import './session-device.js';
+
 (() => {
   'use strict';
   const $ = s => document.querySelector(s);
